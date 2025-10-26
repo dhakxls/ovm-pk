@@ -1,0 +1,25 @@
+name: ovmpk
+channels: [conda-forge, bioconda]
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - biopython
+  - openmm=8.0         # MD backend
+  - pdbfixer>=1.9      # Protein prep
+  - mdanalysis>=2.4    # Trajectory analysis
+  - mdtraj>=1.9.9
+  - rdkit=2023.03      # Ligand prep
+  - openbabel>=3.1
+  - propka
+  - pdb2pqr
+  - smina             # docking (if available on your platform)
+  - pytest
+  - pip:
+      - dimorphite-dl
+      - typer
+      - pyyaml
+      - requests

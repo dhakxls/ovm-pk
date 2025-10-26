@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ovm-pk"
+version = "0.0.1"
+description = "OVM-PK: docking → MD → free energy pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "typer>=0.12",
+  "pyyaml>=6.0.1",
+  "requests>=2.31.0"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "ruff>=0.5.0", "black>=24.0.0", "mypy>=1.5.0"]
+
+[project.scripts]
+ovmpk = "ovmpk.cli:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.venv/
+.conda-env/
+.env
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Data & heavy outputs
+data/
+**/*.dcd
+**/*.xtc
+**/*.trr
+**/*.nc
+**/*.chk
+**/*.rst
+**/*.prmtop
+**/*.inpcrd
+**/*.top
+**/*.tpr
+**/*.edr
+**/*.log
+
+# Results (allow light summaries)
+results/**
+!results/**/*.csv
+!results/**/*.json
+!results/**/*.png
+!results/**/*.svg

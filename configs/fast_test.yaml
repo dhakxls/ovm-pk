@@ -1,0 +1,16 @@
+# Light-weight config for CI and smoke tests
+docking:
+  structure_policy: prefer_apo
+  blind_mode: false
+  poses: 3
+validation:
+  rmsd_gate: 3.0
+md:
+  temperature: 300
+  pressure: 1.0
+  length_ns: 0.05    # don't actually run MD in dry-run
+runtime:
+  serialize_gpu: true
+  cpu_threads: 2
+reporting:
+  outdir: results/reports_fast

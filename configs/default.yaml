@@ -1,0 +1,15 @@
+docking:
+  structure_policy: prefer_apo       # prefer_holo | prefer_apo | apo_only_for_validation
+  blind_mode: false                  # guided (false) or blind (true)
+  poses: 20
+validation:
+  rmsd_gate: 2.0                     # Å, for guided redocking if holo known
+md:
+  temperature: 310
+  pressure: 1.0
+  length_ns: 50
+runtime:
+  serialize_gpu: true
+  cpu_threads: 12
+reporting:
+  outdir: results/reports
