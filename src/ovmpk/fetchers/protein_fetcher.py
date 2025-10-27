@@ -8,7 +8,7 @@ Protein fetcher (rcsb-api only)
 - Keeps the public entrypoint: fetch(identifier: str, cfg: Dict[str, Any]) -> Dict[str, Path]
   so test_fetchers.py can validate the output file (checks for file existence & size).
 """
-import os
+
 import re
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -37,23 +37,6 @@ UNIPROT_REGEX = re.compile(
 
 def _looks_like_uniprot(s: str) -> bool:
     return bool(UNIPROT_REGEX.match(s.strip()))
-
-
-def _dry_file(path: Path) -> None:
-    """Create a minimal mmCIF-like placeholder for dry runs."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(DRY_RUN_PLACEHOLDER)
-    print(f"[info][dry-run] Created placeholder CIF: {path}")
-
-
-def _is_placeholder(path: Path) -> bool:
-    """Return True if file exists and only contains the dry-run placeholder."""
-    if not path.exists() or path.stat().st_size > 200:
-        return False
-    try:
-        return "dry-run CIF placeholder" in path.read_text()
-    except Exception:
-        return False
 
 
 def _resolve_uniprot(identifier: str, mapping: Dict[str, str]) -> Optional[str]:
@@ -151,7 +134,6 @@ def fetch(identifier: str, cfg: Dict[str, Any]) -> Dict[str, Path]:
 
     Returns: {"best_match": Path}
     """
-    dry = bool(os.getenv("OVM_DRY_RUN", ""))
     pcfg = cfg.get("fetch", {}).get("protein", {})
 
     species_id = int(pcfg.get("target_species_id", 9606))
@@ -172,11 +154,6 @@ def fetch(identifier: str, cfg: Dict[str, Any]) -> Dict[str, Path]:
     lig_suffix = f"_req_{'_'.join([l.upper() for l in required_ligands])}" if required_ligands else "_any"
     filename_base = f"{id_part}_{species_id}{lig_suffix}"
 
-    if dry:
-        outp = base / f"{filename_base}_dryrun.cif"
-        _dry_file(outp)
-        return {"dry_run_placeholder": outp}
-
     print("[info] Querying RCSB PDB via rcsb-api…")
     pdb_id = _select_best_entry_id(search_term, species_id, method, max_resolution, required_ligands, rows)
     if not pdb_id:
@@ -185,14 +162,6 @@ def fetch(identifier: str, cfg: Dict[str, Any]) -> Dict[str, Path]:
         )
 
     outp = base / f"{filename_base}_{pdb_id}.cif"
-
-    # Clear stale placeholder
-    if _is_placeholder(outp):
-        try:
-            outp.unlink()
-            print(f"[info] Removed placeholder: {outp}")
-        except OSError as e:
-            print(f"[warn] Could not remove placeholder {outp}: {e}")
 
     if outp.exists():
         print(f"[info] File already exists: {outp}")
