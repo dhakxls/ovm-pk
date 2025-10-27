@@ -6,6 +6,8 @@ __pycache__/
 .mypy_cache/
 .venv/
 .env
+*.pyc
+*.pyo
 
 # --- Editors / OS
 .vscode/
@@ -18,6 +20,7 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+.pytest_cache/
 
 # --- Repo-specific run artifacts
 # structure / ligand downloads & outputs
@@ -27,6 +30,10 @@ structures/**
 results/**
 outputs/**
 logs/**
+data/output/
+data/work/
+data/cache/
+*.log
 
 # binary chemistry/structure files anywhere (prevent accidental commits)
 **/*.cif
@@ -57,3 +64,5 @@ configs/autopocketgen*/**
 !data/input/.gitkeep
 !data/input/proteins/.gitkeep
 !data/input/ligands/.gitkeep
+
+

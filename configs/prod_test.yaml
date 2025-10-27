@@ -26,7 +26,9 @@ prep:                         # Parameters for preparation steps
     charge_method: gasteiger  # Method for ligand partial charges
     force_3d: true            # Attempt to generate 3D coords if missing
     output_suffix: "_prepared_ph7.4" # Suffix for the prepared SDF file
-
+  strip_heme: true
+  strip_resnames: [GOL, SO4, EDO, PEG, TRS, ACT, PG4, PO4, CL, NA]
+  
 docking:                      # Parameters for smina docking
   structure_policy: prefer_apo # Use apo structure if available (currently used by fetcher)
   blind_mode: false           # Use a defined box, not autobox
@@ -51,6 +53,9 @@ md:                           # Parameters for OpenMM MD simulation
   temperature: 310            # Simulation temperature (Kelvin)
   pressure: 1.0               # Simulation pressure (bar)
   length_ns: 10               # Production simulation length (nanoseconds)
+  water_model: tip3p
+  padding: 10.0
+  ionic: 0.15
 
 runtime:                      # Parameters controlling execution resources
   serialize_gpu: true         # Allow MD runs to share GPU sequentially if needed
