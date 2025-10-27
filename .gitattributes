@@ -15,3 +15,11 @@
 *.dcd  binary
 *.png  binary
 *.jpg  binary
+# Enforce LF in source
+*.py   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sh   text eol=lf
+*.md   text eol=lf
+# (Optional) keep Windows endings only where needed
+*.bat  text eol=crlf
