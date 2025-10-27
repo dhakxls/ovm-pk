@@ -1,0 +1,5 @@
+ovmpk --config configs/heme_focus9_s42.yaml --gene CYP3A4 --ligand ketoconazole_pH74_s42
+ovmpk --config configs/heme_focus9_s7.yaml --gene CYP3A4 --ligand ketoconazole_pH74_s7
+ovmpk --config configs/heme_focus9_s11.yaml --gene CYP3A4 --ligand ketoconazole_pH74_s11
+ovmpk --config configs/heme_focus9_s99.yaml --gene CYP3A4 --ligand ketoconazole_pH74_s99
+ovmpk --config configs/heme_focus9_s123.yaml --gene CYP3A4 --ligand ketoconazole_pH74_s123

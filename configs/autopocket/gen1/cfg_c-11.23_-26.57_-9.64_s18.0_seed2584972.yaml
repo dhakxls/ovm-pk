@@ -1,0 +1,27 @@
+docking:
+  blind_mode: false
+  box:
+    center:
+    - -11.234367569740128
+    - -26.572057882933652
+    - -9.63885029623949
+    size:
+    - 18.0
+    - 18.0
+    - 18.0
+  exhaustiveness: 64
+  poses: 60
+  seed: 2584972
+  structure_policy: prefer_apo
+md:
+  length_ns: 50
+  pressure: 1.0
+  temperature: 310
+reporting:
+  outdir: results/reports
+  run_root: results/runs
+runtime:
+  cpu_threads: 7
+  serialize_gpu: true
+validation:
+  rmsd_gate: 2.0

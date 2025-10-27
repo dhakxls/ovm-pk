@@ -1,18 +1,18 @@
 docking:
   structure_policy: prefer_apo
   blind_mode: false
-  poses: 20
-  exhaustiveness: 8
+  poses: 60
+  exhaustiveness: 64
   seed: 42
   box:
     center:
-      - -15.846
-      - -23.032
-      - -11.293
+    - -15.846
+    - -23.032
+    - -11.293
     size:
-      - 26.0
-      - 26.0
-      - 26.0
+    - 12.0
+    - 12.0
+    - 12.0
 validation:
   rmsd_gate: 2.0
 md:
@@ -21,7 +21,7 @@ md:
   length_ns: 50
 runtime:
   serialize_gpu: true
-  cpu_threads: 12
+  cpu_threads: 2
 reporting:
   outdir: results/reports
   run_root: results/runs

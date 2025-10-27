@@ -1,7 +1,7 @@
 from pathlib import Path
 import os, urllib.parse, requests
 
-PUBCHEM_SDF = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{name}/SDF"
+PUBCHEM_SDF = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{name}/SDF?record_type=3d"
 
 def fetch(name: str, cfg: dict):
     dry = bool(os.getenv("OVM_DRY_RUN", ""))
