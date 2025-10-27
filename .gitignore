@@ -66,3 +66,7 @@ configs/autopocketgen*/**
 !data/input/ligands/.gitkeep
 
 
+
+# Drop GAFF path
+scripts/md_gaff_prepare.py
+tests/test_md_gaff_prepare.py
