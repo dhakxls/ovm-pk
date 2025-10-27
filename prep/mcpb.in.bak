@@ -1,8 +1,0 @@
-original_pdb = 3A4_heme_cluster.pdb
-group_name   = heme_cys
-ion_ids      = 3810
-cut_off      = 2.8
-charge_method = bcc
-forcefield    = gaff2
-# Set which QM package to write inputs for: gaussian or orca
-software      = orca

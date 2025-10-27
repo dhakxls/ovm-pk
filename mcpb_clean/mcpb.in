@@ -1,9 +1,0 @@
-original_pdb cluster_with443.pdb
-group_name heme_cys
-ion_ids 3810
-ion_mol2files Fe3.mol2
-naa_mol2files HEM.mol2
-cut_off 2.8
-charge_method bcc
-forcefield gaff2
-software_version gms
