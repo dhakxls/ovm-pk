@@ -2,7 +2,16 @@
 """
 Lightweight wrapper around the `smina` CLI (Vina-compatible) used by ovmpk.
 Includes optional PDB cleaning, PDBFixer preprocessing, and multi-seed runs.
+
+New:
+- Auto-center docking box on Fe atom(s) of heme (HEM/HEC) if configured:
+    docking:
+      box:
+        auto_center: heme_fe
+        fallback_center: [x, y, z]
+        size: [12.0, 12.0, 12.0]
 """
+
 from __future__ import annotations
 
 import os
@@ -10,7 +19,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
-import random # For multi-seed runs
+import random  # For multi-seed runs
 
 # Define a work directory for docking outputs
 WORK_DIR = Path("data/work/docking")
@@ -34,15 +43,13 @@ def _run_subprocess(cmd: list[str], cwd: Optional[Path] = None, log_path: Option
     """Run a command, raising with full stdout/stderr on non-zero exit."""
     print(f"[cmd] Running: {' '.join(cmd)}")
     try:
-        # Capture output to variables
         process = subprocess.run(
             cmd,
             cwd=str(cwd) if cwd else None,
             text=True,
             capture_output=True,
-            check=True, # Raise CalledProcessError on non-zero exit
+            check=True,  # Raise CalledProcessError on non-zero exit
         )
-        # Write stdout/stderr to log file if requested
         if log_path:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             log_content = (
@@ -54,24 +61,20 @@ def _run_subprocess(cmd: list[str], cwd: Optional[Path] = None, log_path: Option
             log_path.write_text(log_content)
 
     except FileNotFoundError:
-         raise RuntimeError(f"Command not found: {cmd[0]}. Ensure it's installed and in PATH.")
+        raise RuntimeError(f"Command not found: {cmd[0]}. Ensure it's installed and in PATH.")
     except subprocess.CalledProcessError as e:
-        # Attempt to write logs even on failure before raising
         if log_path:
-             log_path.parent.mkdir(parents=True, exist_ok=True)
-             log_content = (
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_content = (
                 f"Command: {' '.join(e.cmd)}\n"
                 f"Return Code: {e.returncode}\n"
                 f"--- stdout ---\n{e.stdout}\n"
                 f"--- stderr ---\n{e.stderr}\n"
-             )
-             log_path.write_text(log_content)
+            )
+            log_path.write_text(log_content)
         raise RuntimeError(
             "Command failed ({rc}): {cmd}\n--- stdout ---\n{out}\n--- stderr ---\n{err}".format(
-                rc=e.returncode,
-                cmd=" ".join(e.cmd),
-                out=e.stdout,
-                err=e.stderr,
+                rc=e.returncode, cmd=" ".join(e.cmd), out=e.stdout, err=e.stderr
             )
         )
     except Exception as e:
@@ -105,7 +108,7 @@ def _alias_suffix(seed_val: Optional[int] = None) -> str:
     if alias:
         parts.append(alias)
     if seed_val is not None:
-        parts.append(f"s{seed_val}") # Use decimal seed for clarity here
+        parts.append(f"s{seed_val}")
     return f"_{'_'.join(parts)}" if parts else ""
 
 def _cfg_docking(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -114,12 +117,56 @@ def _cfg_docking(cfg: Dict[str, Any]) -> Dict[str, Any]:
 def _cfg_prep_protein(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg.get("prep", {}).get("protein", {}) or {}
 
+# ---------- PDB helpers ----------
+
+def _autocenter_box_from_pdb(pdb_path: Path) -> Optional[Tuple[float, float, float]]:
+    """
+    Extract the (x,y,z) of Fe atom(s) from HEM/HEC residues in a PDB.
+    Returns the average Fe position if multiple are found, else None.
+    """
+    if not pdb_path.exists():
+        print(f"[warn] auto-center: PDB not found: {pdb_path}")
+        return None
+
+    centers: list[Tuple[float, float, float]] = []
+    try:
+        with pdb_path.open("r", errors="ignore") as fh:
+            for line in fh:
+                if not (line.startswith("ATOM") or line.startswith("HETATM")):
+                    continue
+                # PDB columns (1-based): resname 18-20, atom name 13-16, x 31-38, y 39-46, z 47-54, element 77-78
+                resn = line[17:20].strip().upper()
+                if resn not in {"HEM", "HEC"}:
+                    continue
+                atom_name = line[12:16].strip().upper()
+                element = line[76:78].strip().upper() if len(line) >= 78 else ""
+                if atom_name == "FE" or element == "FE":
+                    try:
+                        x = float(line[30:38]); y = float(line[38:46]); z = float(line[46:54])
+                        centers.append((x, y, z))
+                    except ValueError:
+                        continue
+    except Exception as e:
+        print(f"[warn] auto-center: error scanning PDB {pdb_path}: {e}")
+        return None
+
+    if not centers:
+        print("[info] auto-center: no HEM/HEC Fe atom found; will use fallback if provided.")
+        return None
+
+    n = len(centers)
+    cx = sum(x for x, _, _ in centers) / n
+    cy = sum(y for _, y, _ in centers) / n
+    cz = sum(z for _, _, z in centers) / n
+    print(f"[info] auto-center: using mean Fe position from {n} heme(s): ({cx:.3f}, {cy:.3f}, {cz:.3f})")
+    return (cx, cy, cz)
+
 # ---------- PDB Processing Steps ----------
 
 def _clean_pdb(input_pdb: Path, output_pdb: Path, prep_cfg: Dict[str, Any]) -> Path:
     """Extracts specified chains and HETATMs from a PDB file."""
-    keep_chains = set(prep_cfg.get("keep_chains", ["A"])) # Default to chain A
-    keep_hetatms = set(prep_cfg.get("keep_hetatms", ["HEM"])) # Default to Heme
+    keep_chains = set(prep_cfg.get("keep_chains", ["A"]))  # Default to chain A
+    keep_hetatms = set(prep_cfg.get("keep_hetatms", ["HEM"]))  # Default to Heme
     print(f"[info] Cleaning PDB: Keeping chains {keep_chains} and HETATMs {keep_hetatms} from {input_pdb} -> {output_pdb}")
 
     wrote_atom = False
@@ -129,7 +176,6 @@ def _clean_pdb(input_pdb: Path, output_pdb: Path, prep_cfg: Dict[str, Any]) -> P
     try:
         with input_pdb.open('r') as infile, output_pdb.open('w') as outfile:
             for line in infile:
-                # Handle MODEL records for NMR structures (keep first model only)
                 if line.startswith("MODEL"):
                     model_count += 1
                     if model_count == 1:
@@ -141,10 +187,9 @@ def _clean_pdb(input_pdb: Path, output_pdb: Path, prep_cfg: Dict[str, Any]) -> P
                         outfile.write(line)
                     in_model = False
                     continue
-                if model_count > 1 and not in_model: # Skip lines between models > 1
+                if model_count > 1 and not in_model:
                     continue
 
-                # Process ATOM, HETATM, TER, END based on chain/residue
                 record_type = line[0:6].strip()
                 if record_type in ("ATOM", "ANISOU"):
                     chain_id = line[21:22].strip()
@@ -152,44 +197,36 @@ def _clean_pdb(input_pdb: Path, output_pdb: Path, prep_cfg: Dict[str, Any]) -> P
                         outfile.write(line)
                         wrote_atom = True
                 elif record_type == "TER":
-                     # Write TER card only if the *previous* ATOM was kept (approximate)
-                     # PDB format can be complex here, this is a basic heuristic
-                     if wrote_atom and line[21:22].strip() in keep_chains:
-                          outfile.write(line)
-                     # Reset flag after TER
-                     # wrote_atom = False # Keep commented - TER applies to last written atom of the chain
+                    if wrote_atom and line[21:22].strip() in keep_chains:
+                        outfile.write(line)
                 elif record_type == "HETATM":
                     res_name = line[17:20].strip()
                     if res_name in keep_hetatms:
                         outfile.write(line)
-                        wrote_atom = True # HETATM counts as an atom written
+                        wrote_atom = True
                 elif record_type == "END":
                     outfile.write(line)
-                    break # Stop processing after END
-                # else: pass # Keep other records like REMARK, HEADER etc.? Maybe not needed.
+                    break
 
         if not wrote_atom:
-             print(f"[warn] PDB cleaning resulted in an empty file for {output_pdb}. Check keep_chains/keep_hetatms.")
-             # Optionally delete empty file or return original path
-             # output_pdb.unlink(missing_ok=True)
-             # return input_pdb # Fallback if cleaning fails
+            print(f"[warn] PDB cleaning resulted in an empty file for {output_pdb}. Check keep_chains/keep_hetatms.")
         else:
-             print(f"[info] Cleaned PDB saved to {output_pdb}")
+            print(f"[info] Cleaned PDB saved to {output_pdb}")
 
-        return output_pdb # Return path to cleaned file
+        return output_pdb
 
     except FileNotFoundError:
         print(f"[error] Input PDB not found during cleaning: {input_pdb}")
         raise
     except Exception as e:
         print(f"[error] Failed during PDB cleaning: {e}")
-        return input_pdb # Fallback to original on error
+        return input_pdb
 
 def _preprocess_receptor_pdbfixer(input_pdb: Path, output_pdb: Path, prep_cfg: Dict[str, Any]) -> Path:
     """Uses PDBFixer to add hydrogens and missing atoms."""
     if not HAS_PDBFIXER:
         print("[warn] PDBFixer library not found. Skipping PDBFixer preprocessing.")
-        return input_pdb # Return original path if fixer not available
+        return input_pdb
 
     target_ph = float(prep_cfg.get("ph", 7.4))
     print(f"[info] Running PDBFixer on {input_pdb} (pH={target_ph})...")
@@ -198,56 +235,50 @@ def _preprocess_receptor_pdbfixer(input_pdb: Path, output_pdb: Path, prep_cfg: D
         fixer.findMissingResidues()
         fixer.findNonstandardResidues()
         fixer.findMissingAtoms()
-        fixer.addMissingAtoms() # Keep heterogens by default
+        fixer.addMissingAtoms()
         fixer.addMissingHydrogens(target_ph)
 
         with open(output_pdb, 'w') as f:
             app.PDBFile.writeFile(fixer.topology, fixer.positions, f, keepIds=True)
         print(f"[info] PDBFixer output saved to {output_pdb}")
-        return output_pdb # Return path to fixed file
+        return output_pdb
 
     except Exception as e:
         print(f"[warn] PDBFixer failed: {e}. Using input PDB {input_pdb} for obabel conversion.")
-        return input_pdb # Fallback to input path if fixer fails
+        return input_pdb
 
 def _to_pdbqt_receptor(inp_pdb: Path, out_pdbqt: Path) -> None:
     """Convert receptor PDB -> PDBQT with hydrogens using OpenBabel."""
     _need("obabel")
     print(f"[info] Converting receptor PDB to PDBQT: {inp_pdb} -> {out_pdbqt}")
-    # Try common flags: -h (add hydrogens), -p (pH model), -a (preserve atom types for known residues)
-    # OpenBabel can sometimes struggle with Heme, hence trying different flag combinations.
     obabel_log = out_pdbqt.with_suffix(".obabel_receptor.log")
     cmd1 = ["obabel", "-ipdb", str(inp_pdb), "-opdbqt", "-O", str(out_pdbqt), "-h", "-p", "-a"]
     try:
         _run_subprocess(cmd1, log_path=obabel_log)
         if _has_atoms(out_pdbqt):
             print("[info] obabel receptor conversion successful.")
-            return # Success
+            return
     except Exception as e:
         print(f"[warn] obabel command failed with -h -p -a: {e}. Trying without -p.")
 
-    # Fallback 1: Try without pH model (-p)
     cmd2 = ["obabel", "-ipdb", str(inp_pdb), "-opdbqt", "-O", str(out_pdbqt), "-h", "-a"]
     try:
-        _run_subprocess(cmd2, log_path=obabel_log.with_suffix(".log2")) # Use different log
+        _run_subprocess(cmd2, log_path=obabel_log.with_suffix(".log2"))
         if _has_atoms(out_pdbqt):
             print("[info] obabel receptor conversion successful (fallback without -p).")
-            return # Success
+            return
     except Exception as e:
         print(f"[warn] obabel command failed without -p: {e}. Trying minimal flags.")
 
-    # Fallback 2: Minimal flags (just add hydrogens)
     cmd3 = ["obabel", "-ipdb", str(inp_pdb), "-opdbqt", "-O", str(out_pdbqt), "-h"]
     try:
-        _run_subprocess(cmd3, log_path=obabel_log.with_suffix(".log3")) # Use different log
+        _run_subprocess(cmd3, log_path=obabel_log.with_suffix(".log3"))
         if _has_atoms(out_pdbqt):
             print("[info] obabel receptor conversion successful (fallback minimal -h).")
-            return # Success
+            return
     except Exception as e:
         print(f"[error] All obabel conversion attempts failed for receptor: {e}")
-        # Error is raised below based on _has_atoms check
 
-    # Final check
     if not _has_atoms(out_pdbqt):
         raise RuntimeError(
             f"Receptor PDBQT conversion failed or produced no atoms: {out_pdbqt}\n"
@@ -260,14 +291,12 @@ def _to_pdbqt_ligand(inp_sdf: Path, out_pdbqt: Path) -> None:
     """Convert prepared ligand SDF -> PDBQT with hydrogens and charges using OpenBabel."""
     _need("obabel")
     print(f"[info] Converting ligand SDF to PDBQT: {inp_sdf} -> {out_pdbqt}")
-    # -h adds hydrogens. --partialcharge gasteiger assigns charges (obabel should handle this automatically too)
     obabel_log = out_pdbqt.with_suffix(".obabel_ligand.log")
     cmd = ["obabel", "-isdf", str(inp_sdf), "-opdbqt", "-O", str(out_pdbqt), "-h", "--partialcharge", "gasteiger"]
     try:
-         _run_subprocess(cmd, log_path=obabel_log)
+        _run_subprocess(cmd, log_path=obabel_log)
     except Exception as e:
         print(f"[error] obabel ligand conversion failed: {e}")
-         # Error raised below
 
     if not _has_atoms(out_pdbqt):
         raise RuntimeError(
@@ -276,7 +305,6 @@ def _to_pdbqt_ligand(inp_sdf: Path, out_pdbqt: Path) -> None:
             f"  - Check obabel logs (e.g., {obabel_log})."
         )
     print("[info] obabel ligand conversion successful.")
-
 
 # ---------- Core Docking Function ----------
 
@@ -297,7 +325,7 @@ def run(protein_pdb_in: str | Path, ligand_sdf_in: str | Path, cfg: Dict[str, An
     work = _ensure_workdir()
 
     protein_pdb_in = Path(protein_pdb_in)
-    ligand_sdf_in  = Path(ligand_sdf_in) # Assume ligand_prep handled protonation/charges
+    ligand_sdf_in = Path(ligand_sdf_in)  # Assume ligand_prep handled protonation/charges
 
     if not protein_pdb_in.exists() or protein_pdb_in.stat().st_size == 0:
         raise RuntimeError(f"Input receptor PDB not found or empty: {protein_pdb_in}")
@@ -310,46 +338,77 @@ def run(protein_pdb_in: str | Path, ligand_sdf_in: str | Path, cfg: Dict[str, An
     threads = int(runtime_cfg.get("cpu_threads", max(1, os.cpu_count() // 2)))
 
     # --- Receptor Preparation Pipeline ---
-    # 1. Clean PDB (optional based on config or defaults)
     pdb_cleaned = work / f"{protein_pdb_in.stem}_cleaned.pdb"
     pdb_after_cleaning = _clean_pdb(protein_pdb_in, pdb_cleaned, prep_cfg)
 
-    # 2. Preprocess with PDBFixer (optional)
     pdb_fixed = work / f"{pdb_after_cleaning.stem}_fixed.pdb"
     pdb_for_obabel = _preprocess_receptor_pdbfixer(pdb_after_cleaning, pdb_fixed, prep_cfg)
 
-    # 3. Convert final processed PDB to PDBQT
-    receptor_pdbqt = work / f"{pdb_for_obabel.stem}.pdbqt" # Base name for PDBQT
+    receptor_pdbqt = work / f"{pdb_for_obabel.stem}.pdbqt"
     _to_pdbqt_receptor(pdb_for_obabel, receptor_pdbqt)
     # --- End Receptor Prep ---
 
     # --- Ligand Preparation ---
-    # Convert input ligand SDF to PDBQT (assuming ligand_prep.py handled internal prep)
-    ligand_pdbqt = work / f"{ligand_sdf_in.stem}.pdbqt" # Base name
+    ligand_pdbqt = work / f"{ligand_sdf_in.stem}.pdbqt"
     _to_pdbqt_ligand(ligand_sdf_in, ligand_pdbqt)
     # --- End Ligand Prep ---
 
     # --- Docking Parameters ---
     poses = int(docking_cfg.get("poses", 20))
     exhaustiveness = int(docking_cfg.get("exhaustiveness", 8))
-    default_seed = int(docking_cfg.get("seed", 42)) # Seed for single run
-    num_seeds = int(docking_cfg.get("num_seeds", 1)) # Number of runs
+    default_seed = int(docking_cfg.get("seed", 42))
+    num_seeds = int(docking_cfg.get("num_seeds", 1))
     blind = bool(docking_cfg.get("blind_mode", False))
 
     output_sdf_files: List[str] = []
 
+    # Precompute box center/size if not blind
+    box_center: Optional[Tuple[float, float, float]] = None
+    box_size = None
+    if not blind:
+        box = docking_cfg.get("box", {}) or {}
+        # size must be present
+        size = box.get("size")
+        if isinstance(size, (int, float)):
+            size = [size, size, size]
+        if not (isinstance(size, (list, tuple)) and len(size) == 3):
+            raise RuntimeError("Docking box 'size' must be a list/tuple of 3 floats.")
+        box_size = [float(size[0]), float(size[1]), float(size[2])]
+
+        center = box.get("center")
+        auto_mode = (box.get("auto_center") or "").lower()
+        fallback_center = box.get("fallback_center")
+
+        if auto_mode == "heme_fe":
+            auto = _autocenter_box_from_pdb(pdb_for_obabel)
+            if auto is not None:
+                box_center = auto
+            elif fallback_center and len(fallback_center) == 3:
+                box_center = (float(fallback_center[0]), float(fallback_center[1]), float(fallback_center[2]))
+                print(f"[info] auto-center: using fallback center: {box_center}")
+            elif center and len(center) == 3:
+                box_center = (float(center[0]), float(center[1]), float(center[2]))
+                print(f"[info] auto-center: using user-provided 'center' as fallback: {box_center}")
+            else:
+                raise RuntimeError(
+                    "auto_center=heme_fe requested but no Fe found and neither "
+                    "'fallback_center' nor 'center' provided."
+                )
+        else:
+            # No auto centering; require explicit center
+            if not (center and len(center) == 3):
+                raise RuntimeError("Boxed docking requires 'box.center' when auto_center is not used.")
+            box_center = (float(center[0]), float(center[1]), float(center[2]))
+
     # --- Run Smina (potentially multiple times) ---
     for i in range(num_seeds):
-        # Determine seed for this run
         current_seed = default_seed if num_seeds == 1 else random.randint(1, 10_000_000)
         print(f"\n[info] Starting smina run {i+1}/{num_seeds} with seed {current_seed}...")
 
-        # Generate unique filenames for this run using alias suffix
         run_alias = _alias_suffix(seed_val=current_seed if num_seeds > 1 else None)
         out_sdf = work / f"{receptor_pdbqt.stem}_{ligand_pdbqt.stem}{run_alias}_poses.sdf"
         log_txt = work / f"{receptor_pdbqt.stem}_{ligand_pdbqt.stem}{run_alias}_smina.log"
 
-        # Build base smina command
         cmd_base: List[str] = [
             "smina",
             "-r", str(receptor_pdbqt),
@@ -359,38 +418,24 @@ def run(protein_pdb_in: str | Path, ligand_sdf_in: str | Path, cfg: Dict[str, An
             "--exhaustiveness", str(exhaustiveness),
             "--seed", str(current_seed),
             "--cpu", str(threads),
-            # "--log", str(log_txt), # Log is now handled by _run_subprocess
         ]
 
-        # Box handling
         if blind:
-            cmd_base += ["--autobox_ligand", str(ligand_pdbqt), "--autobox_add", "8"] # Auto box around ligand + padding
+            cmd_base += ["--autobox_ligand", str(ligand_pdbqt), "--autobox_add", "8"]
         else:
-            box = docking_cfg.get("box", {})
-            center = box.get("center")
-            size = box.get("size")
-            # Ensure size is list/tuple of 3 numbers
-            if isinstance(size, (int, float)): size = [size, size, size]
-
-            if not (center and size and len(center) == 3 and len(size) == 3):
-                raise RuntimeError(
-                    "Boxed docking requested but 'docking.box.center' (list of 3 floats) "
-                    "and/or 'docking.box.size' (list of 3 floats or single float) "
-                    "are missing or malformed in config."
-                )
+            cx, cy, cz = box_center  # type: ignore
+            sx, sy, sz = box_size    # type: ignore
             cmd_base += [
-                "--center_x", f"{float(center[0]):.3f}",
-                "--center_y", f"{float(center[1]):.3f}",
-                "--center_z", f"{float(center[2]):.3f}",
-                "--size_x", f"{float(size[0]):.3f}",
-                "--size_y", f"{float(size[1]):.3f}",
-                "--size_z", f"{float(size[2]):.3f}",
+                "--center_x", f"{cx:.3f}",
+                "--center_y", f"{cy:.3f}",
+                "--center_z", f"{cz:.3f}",
+                "--size_x", f"{sx:.3f}",
+                "--size_y", f"{sy:.3f}",
+                "--size_z", f"{sz:.3f}",
             ]
 
-        # Execute smina command for this seed
         try:
             _run_subprocess(cmd_base, log_path=log_txt)
-            # Sanity check output
             if not out_sdf.exists() or out_sdf.stat().st_size == 0:
                 print(f"[warn] smina run {i+1} (seed {current_seed}) finished but produced no poses: {out_sdf}. Check log: {log_txt}")
             else:
@@ -398,13 +443,11 @@ def run(protein_pdb_in: str | Path, ligand_sdf_in: str | Path, cfg: Dict[str, An
                 print(f"[info] smina run {i+1} complete. Output: {out_sdf}")
 
         except Exception as e:
-             print(f"[error] smina run {i+1} (seed {current_seed}) failed: {e}. Check log: {log_txt}")
-             # Decide whether to continue other seeds or raise immediately
-             # For now, let's continue to try other seeds
-             continue
+            print(f"[error] smina run {i+1} (seed {current_seed}) failed: {e}. Check log: {log_txt}")
+            # Continue other seeds; change to `raise` if you want fail-fast across seeds
+            continue
 
     if not output_sdf_files:
         raise RuntimeError("All smina docking runs failed to produce valid output SDF files.")
 
     return output_sdf_files
-

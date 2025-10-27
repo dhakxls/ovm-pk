@@ -1,67 +1,58 @@
 # Configuration for a production-like test run
-# Uses multi-seed docking and longer MD
+# Uses multi-seed docking and short GPU MD with automatic docking-box centering.
 
 fetch:
   protein:
-    # identifier: P08684 # Optionally provide UniProt ID directly (takes precedence over --gene value)
-    target_species_id: 9606 # Homo sapiens
-    exp_method: X-RAY DIFFRACTION # Experimental method filter
-    max_resolution: 3.0       # Maximum acceptable resolution (Angstroms)
-    required_ligands: ["HEM"] # List of required non-polymer IDs (e.g., cofactors)
-    # gene_to_uniprot_map: {} # Optionally override default gene mapping
-    # structure_policy: prefer_apo # TODO: Add logic to select apo/holo based on this
+    # identifier: P08684           # (Optional) lock to a UniProt ID
+    target_species_id: 9606        # Homo sapiens
+    exp_method: "X-RAY DIFFRACTION"
+    max_resolution: 3.0            # Å
+    required_ligands: ["HEM"]      # ensure a heme-bound structure is picked
   ligand:
-    identifier_type: name     # Type of identifier passed via --ligand CLI arg
-                              # Options: name, cid, smiles, inchikey
+    identifier_type: name          # name | cid | smiles | inchikey
 
-prep:                         # Parameters for preparation steps
+prep:
   protein:
-    ph: 7.4                   # pH for PDBFixer protonation
-    run_pdbfixer: true        # Attempt to use PDBFixer
-    output_suffix: "_fixed_ph7.4" # Suffix for the fixed PDB file
-    # keep_chains: ['A']      # Defined in smina_wrapper.py cleaning step for now
-    # keep_hetatms: ['HEM']   # Defined in smina_wrapper.py cleaning step for now
+    ph: 7.4
+    run_pdbfixer: true
+    output_suffix: "_fixed_ph7.4"
   ligand:
-    ph: 7.4                   # pH for dimorphite-dl protonation
-    charge_method: gasteiger  # Method for ligand partial charges
-    force_3d: true            # Attempt to generate 3D coords if missing
-    output_suffix: "_prepared_ph7.4" # Suffix for the prepared SDF file
+    ph: 7.4
+    charge_method: gasteiger
+    force_3d: true
+    output_suffix: "_prepared_ph7.4"
   strip_heme: true
-  strip_resnames: [GOL, SO4, EDO, PEG, TRS, ACT, PG4, PO4, CL, NA]
-  
-docking:                      # Parameters for smina docking
-  structure_policy: prefer_apo # Use apo structure if available (currently used by fetcher)
-  blind_mode: false           # Use a defined box, not autobox
-  num_seeds: 5                # Run smina 5 times with different seeds
-  poses: 20                   # Number of poses to generate *per run*
-  exhaustiveness: 16          # Search thoroughness for each smina run (CPU intensive)
-  seed: 42                    # Base seed if num_seeds is 1
-  box:                        # Define docking box (required for non-blind and Fe-N selection)
-    center:                   # Coordinates for Heme Fe in 1TQN (used by pose selector)
-      - -15.846
-      - -23.032
-      - -11.293
-    size:                     # Box size (X, Y, Z Angstroms) - focused around Heme
-      - 12.0
-      - 12.0
-      - 12.0
+  strip_resnames: ["GOL","SO4","EDO","PEG","TRS","ACT","PG4","PO4","CL","NA"]
 
-validation:                   # Optional post-docking validation (not fully implemented yet)
+docking:
+  structure_policy: prefer_apo
+  blind_mode: false                # keep box mode, but auto-center it
+  num_seeds: 5
+  poses: 20
+  exhaustiveness: 16
+  seed: 42
+  box:
+    # NEW: auto-center the box on the Fe atom of HEM/HEC in the prepared receptor PDB.
+    # smina_wrapper will override 'center' at runtime if auto_center == "heme_fe".
+    auto_center: heme_fe
+    fallback_center: [-15.846, -23.032, -11.293]   # used only if Fe not found
+    size: [12.0, 12.0, 12.0]
+
+validation:
   rmsd_gate: 3.0
 
-md:                           # Parameters for OpenMM MD simulation
-  temperature: 310            # Simulation temperature (Kelvin)
-  pressure: 1.0               # Simulation pressure (bar)
-  length_ns: 10               # Production simulation length (nanoseconds)
+md:
+  temperature: 310
+  pressure: 1.0
+  length_ns: 10
   water_model: tip3p
   padding: 10.0
   ionic: 0.15
 
-runtime:                      # Parameters controlling execution resources
-  serialize_gpu: true         # Allow MD runs to share GPU sequentially if needed
-  cpu_threads: 16             # Number of CPU threads for docking (smina)
+runtime:
+  serialize_gpu: true
+  cpu_threads: 16
 
-reporting:                    # Output directories
-  outdir: results/reports_prod # Directory for reports/summaries
-  run_root: results/runs_prod  # Base directory for intermediate run outputs (if used)
-
+reporting:
+  outdir: results/reports_prod
+  run_root: results/runs_prod
