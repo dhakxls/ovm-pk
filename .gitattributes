@@ -1,0 +1,11 @@
+* text=auto eol=lf
+
+# Treat structure/chem formats as binary (no EOL conversions)
+*.cif  binary
+*.bcif binary
+*.pdb  binary
+*.sdf  binary
+*.mol2 binary
+*.pdbqt binary
+*.map  binary
+*.dx   binary
