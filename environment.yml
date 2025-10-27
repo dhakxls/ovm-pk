@@ -23,3 +23,5 @@ dependencies:
       - typer
       - pyyaml
       - requests
+      - rcsb-api
+      
