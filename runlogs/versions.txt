@@ -1,0 +1,13 @@
+{
+  "smina": "smina 2020.12.10 conda-forge:b08c07c   Built Jul 15 2025.  Based on AutoDock Vina 1.1.2.",
+  "obabel": "Open Babel 3.1.0 -- Nov 30 2023 -- 20:43:22",
+  "python": "3.10.19 | packaged by conda-forge | (main, Oct 22 2025, 22:29:10) [GCC 14.3.0]",
+  "rdkit": "2023.09.6",
+  "openmm_version": "",
+  "openmm_platforms": [
+    "Reference",
+    "CPU",
+    "CUDA"
+  ],
+  "pdbfixer": "ok"
+}

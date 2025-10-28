@@ -9,22 +9,19 @@ import subprocess
 import yaml
 import hashlib
 
-# Optional: RDKit for pulling a reference SMILES from prepared ligand SDF
+# Optional: RDKit for validating/deriving a safe (non-radical) reference SMILES
 try:
     from rdkit import Chem
     HAS_RDKIT = True
 except Exception:
     HAS_RDKIT = False
 
-from pathlib import Path
-import sys
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from ovmpk.utils.logging import get_logger
-from ovmpk.utils.smiles_fetch import get_trusted_smiles
+from ovmpk.utils.smiles_fetch import get_trusted_smiles  # returns (smiles, source)
 
-REPO = Path(__file__).resolve().parents[1]
 MD_SCRIPT = REPO / "scripts" / "md_gpu_prepare.py"
 
 STAGES = ["ligand", "receptor", "merge", "forcefield", "solvate", "system", "minimize", "all"]
@@ -46,12 +43,28 @@ def _latest(path_glob):
     return max(paths, key=lambda p: p.stat().st_mtime)
 
 
+def _is_nonradical_smiles(s: str | None) -> bool:
+    """True if SMILES parses and has zero radical electrons."""
+    if not s:
+        return False
+    if not HAS_RDKIT:
+        # Conservative heuristic when RDKit is unavailable: reject obvious radical tokens.
+        bad_tokens = ("[C]", "[N]", "[O]", "[S]", "[P]")
+        return not any(tok in s for tok in bad_tokens)
+    try:
+        mol = Chem.MolFromSmiles(s, sanitize=True)
+        if mol is None:
+            return False
+        rads = sum(a.GetNumRadicalElectrons() for a in mol.GetAtoms())
+        return rads == 0
+    except Exception:
+        return False
+
+
 def _get_ref_smiles_from_prepared_sdf() -> str | None:
     """
-    Find the newest *_prepared_*.sdf under data/work/ligand_prep/ and return a non-isomeric SMILES.
-
-    We prefer non-isomeric canonical SMILES as a robust graph template for fixing bond orders
-    (protonation/tautomer handling is done inside md_gpu_prepare.py).
+    Find the newest *_prepared_*.sdf under data/work/ligand_prep/ and return a *non-radical*
+    non-isomeric SMILES (heavy-atom graph). Returns None if not available/valid.
     """
     if not HAS_RDKIT:
         return None
@@ -68,45 +81,56 @@ def _get_ref_smiles_from_prepared_sdf() -> str | None:
     try:
         # Use heavy-atom graph only for template; avoid stereo/protons here
         smiles = Chem.MolToSmiles(Chem.RemoveHs(Chem.Mol(mol)), isomericSmiles=False)
-        return smiles or None
+        return smiles if _is_nonradical_smiles(smiles) else None
     except Exception:
         return None
 
 
 def get_reference_smiles(cfg: dict) -> str | None:
-    # 1) env/config (keeps prior behavior)
-    s = os.environ.get("OVMPK_LIGAND_SMILES")
-    if s:
-        return s
-    s = cfg.get("ligand", {}).get("reference_smiles")
-    if s:
-        return s
+    """
+    Choose a safe, non-radical reference SMILES for md_gpu_prepare:
+      0) OVMPK_LIGAND_SMILES or cfg['ligand']['reference_smiles'] if non-radical
+      1) Prefer resolver based on the selected-pose SDF (get_trusted_smiles), if non-radical
+      2) selection.json 'smiles' if non-radical
+      3) Prepared SDF under data/work/ligand_prep (non-radical)
+      else: None (script will use --auto-ligand-smiles)
+    """
+    # 0) explicit env / cfg (only if clean)
+    for s in [
+        os.environ.get("OVMPK_LIGAND_SMILES"),
+        cfg.get("ligand", {}).get("reference_smiles"),
+    ]:
+        if _is_nonradical_smiles(s):
+            return s
 
-    # 2) selection.json if present (pose selection might have written it)
-    sel_json = REPO / "data" / "output" / "pose_selection_test" / "selected_pose" / "selection.json"
+    # Selected-pose directory (for steps 1 & 2)
+    sdf_dir = REPO / "data" / "output" / "pose_selection_test" / "selected_pose"
+
+    # 1) resolver from newest selected-pose SDF
+    try:
+        candidates = [p for p in sdf_dir.glob("*.sdf") if not p.name.endswith(".deradicalized.sdf")]
+        if candidates:
+            sdf = max(candidates, key=lambda p: p.stat().st_mtime)
+            smi, source = get_trusted_smiles(sdf, pose_index=1)
+            if _is_nonradical_smiles(smi):
+                print(f"[info] Auto-fetched SMILES from {source}: {smi}")
+                return smi
+    except Exception:
+        # ok to fall through; md_gpu_prepare can also --auto-ligand-smiles
+        pass
+
+    # 2) selection.json (only if non-radical)
+    sel_json = sdf_dir / "selection.json"
     if sel_json.exists():
         try:
             data = json.loads(sel_json.read_text())
-            if data.get("smiles"):
-                return data["smiles"]
+            s = data.get("smiles")
+            if _is_nonradical_smiles(s):
+                return s
         except Exception:
             pass
 
-    # 3) Auto-resolve from the same SDF we’ll pass to md_gpu_prepare (hands-off path)
-    sdf_dir = REPO / "data" / "output" / "pose_selection_test" / "selected_pose"
-    candidates = [p for p in sdf_dir.glob("*.sdf") if not p.name.endswith(".deradicalized.sdf")]
-    if candidates:
-        sdf = max(candidates, key=lambda p: p.stat().st_mtime)
-        try:
-            smiles, source = get_trusted_smiles(sdf, pose_index=1)  # returns (smiles, "PubChem"/"ChEMBL"/etc.)
-            if smiles:
-                print(f"[info] Auto-fetched SMILES from {source}: {smiles}")
-                return smiles
-        except Exception:
-            # ok to fall through; md_gpu_prepare can also --auto-ligand-smiles
-            pass
-
-    # 4) As a last resort, fall back to a prepared SDF (if any)
+    # 3) Prepared SDF fallback
     return _get_ref_smiles_from_prepared_sdf()
 
 
@@ -139,7 +163,7 @@ def run_stage(
         "--platform", "CUDA",
         "--stop-after", stage,
     ]
-    if ref_smiles:
+    if ref_smiles and _is_nonradical_smiles(ref_smiles):
         cmd += ["--ligand-smiles", ref_smiles]
     else:
         # exercise the script’s hands-off resolver path
@@ -183,15 +207,14 @@ def test_md_prepare_step_by_step(tmp_path: Path):
 
     # Inputs (most recent artifacts from earlier tests)
     receptor_dir = REPO / "data" / "work" / "protein_prep"
-
     sdf_dir = REPO / "data" / "output" / "pose_selection_test" / "selected_pose"
+
     candidates = [p for p in sdf_dir.glob("*.sdf") if not p.name.endswith(".deradicalized.sdf")]
     assert candidates, f"No selected-pose SDFs found (excluding *.deradicalized.sdf) in {sdf_dir}"
     sdf = max(candidates, key=lambda p: p.stat().st_mtime)
 
     receptor = _latest(receptor_dir.glob("*.pdb"))
     assert receptor and receptor.exists(), f"No receptor PDB found in {receptor_dir}"
-
     assert sdf and sdf.exists(), f"No selected pose SDF found in {sdf_dir}"
 
     outdir = REPO / "data" / "output" / "md_prepare_step_test"
@@ -205,7 +228,7 @@ def test_md_prepare_step_by_step(tmp_path: Path):
                 pass
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Determine a trusted ligand SMILES (env/config/selection.json → resolver)
+    # Determine a trusted ligand SMILES (env/config/resolver/selection → prepared)
     ref_smiles = get_reference_smiles(cfg)
     if ref_smiles:
         logger.info(f"Using reference SMILES for MD prep: {ref_smiles}")
@@ -228,7 +251,6 @@ def test_md_prepare_step_by_step(tmp_path: Path):
 
     run_stage("solvate", receptor, sdf, outdir, cfg, ref_smiles=ref_smiles)
     assert (outdir / "complex_solvated_premin.pdb").exists() or (outdir / "complex_solvated.pdb").exists()
-
 
     run_stage("system", receptor, sdf, outdir, cfg, ref_smiles=ref_smiles)
     assert (outdir / "system.xml").exists()

@@ -1,0 +1,29 @@
+─────────────────────────────────────── pytest session starts ───────────────────────────────────────
+╭───────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ platform linux pytest 8.4.2 python 3.10.19                                                        │
+│ root /home/martinvo/ovm-pk                                                                        │
+│ plugins anyio-4.11.0, rich-0.2.0                                                                  │
+│ cachedir: .pytest_cache                                                                           │
+│ OVM-PK test run: 20251027-202229                                                                  │
+│ Output root: /home/martinvo/ovm-pk/data/output/run-20251027-202229                                │
+│ OpenMM platforms: Reference, CPU, CUDA                                                            │
+│ RDKit: 2023.09.6                                                                                  │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────╯
+SUCCESS  tests/test_fetchers.py::test_fetchers_end_to_end
+SUCCESS  tests/test_prep.py::test_prep_protein_and_ligand
+SUCCESS  tests/test_docking.py::test_docking_end_to_end
+SUCCESS  tests/test_pose_selection.py::test_pose_selection_min_fe_n_distance
+SUCCESS  tests/test_md_prepare.py::test_md_prepare_step_by_step
+SUCCESS  tests/test_md_equil.py::test_short_equilibration
+SUCCESS  tests/test_md_prod.py::test_short_production
+SUCCESS  tests/test_md_resume.py::test_resume_from_checkpoint
+SUCCESS  tests/test_md_analysis.py::test_prod_artifacts_exist
+SUCCESS  tests/test_md_analysis.py::test_log_thermo_windows
+SUCCESS  tests/test_md_analysis.py::test_dcd_has_multiple_frames
+
+
+╭────────── Summary ──────────╮
+│  11  Total Tests            │
+│  11  Passed       (100.0%)  │
+╰─────────────────────────────╯
+─────────────────────────────────── SUCCEEDED in 1615.66 seconds ────────────────────────────────────
