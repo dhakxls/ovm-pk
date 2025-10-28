@@ -235,3 +235,14 @@ TBD. Until then, assume research/educational use only; check licenses of third-p
 - Multi-seed docking; **auto-center box from heme Fe**
 - Stepwise MD prep + short NVT/NPT/prod + resume + analysis
 - `.gitignore` hardened for binary/trajectory outputs
+
+### GNINA (CNN) integration
+
+This repo can optionally use **GNINA** for docking or rescoring with CNN models.
+
+- **Install**: place `gnina` on your `PATH` (preferred: official binary/Docker).  
+- **Select engine**: set `docking.engine: gnina` in a config, or keep `smina` and enable `docking.rescore_with_gnina: true`.  
+- **Device**: `docking.gnina.device: auto|gpu|cpu`. Auto prefers GPU if available.  
+- **Tests**: `pytest -q tests/test_gnina_presence.py tests/test_gnina_rescore.py` (skips if GNINA not found).  
+
+Artifacts land under `data/work/docking/*_gnina*.{sdf,log}` and per-run metrics JSON in `results/...` when enabled.

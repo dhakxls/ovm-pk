@@ -18,7 +18,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any, Union
 import random  # For multi-seed runs
 
 # Define a work directory for docking outputs
@@ -32,6 +32,7 @@ try:
 except ImportError:
     HAS_PDBFIXER = False
 # ------------------------------------
+__all__ = ["run", "autocenter_box_from_pdb"]
 
 # ---------- Utilities ----------
 
@@ -119,47 +120,80 @@ def _cfg_prep_protein(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 # ---------- PDB helpers ----------
 
-def _autocenter_box_from_pdb(pdb_path: Path) -> Optional[Tuple[float, float, float]]:
+def autocenter_box_from_pdb(
+    pdb_path: Union[str, Path],
+    auto_center: Optional[str] = "heme_fe",
+    fallback_center: Optional[Tuple[float, float, float]] = None,
+) -> Optional[Tuple[float, float, float]]:
     """
-    Extract the (x,y,z) of Fe atom(s) from HEM/HEC residues in a PDB.
-    Returns the average Fe position if multiple are found, else None.
-    """
-    if not pdb_path.exists():
-        print(f"[warn] auto-center: PDB not found: {pdb_path}")
-        return None
+    Compute a docking box center from a receptor PDB.
 
-    centers: list[Tuple[float, float, float]] = []
-    try:
-        with pdb_path.open("r", errors="ignore") as fh:
-            for line in fh:
-                if not (line.startswith("ATOM") or line.startswith("HETATM")):
-                    continue
-                # PDB columns (1-based): resname 18-20, atom name 13-16, x 31-38, y 39-46, z 47-54, element 77-78
-                resn = line[17:20].strip().upper()
-                if resn not in {"HEM", "HEC"}:
-                    continue
-                atom_name = line[12:16].strip().upper()
-                element = line[76:78].strip().upper() if len(line) >= 78 else ""
-                if atom_name == "FE" or element == "FE":
-                    try:
-                        x = float(line[30:38]); y = float(line[38:46]); z = float(line[46:54])
-                        centers.append((x, y, z))
-                    except ValueError:
+    Parameters
+    ----------
+    pdb_path : str | Path
+        Path to PDB file.
+    auto_center : {"heme_fe", None}
+        Strategy for auto-centering. Currently supports "heme_fe" → centroid
+        of Fe atoms that belong to heme-like residues (HEM/HEC/etc.).
+        If None (or "off"), returns fallback_center.
+    fallback_center : tuple[float, float, float] | None
+        Fallback center to return if the chosen strategy finds nothing.
+
+    Returns
+    -------
+    (x, y, z) or None
+    """
+    pdb_path = Path(pdb_path)
+
+    if auto_center in (None, "off", False):
+        return fallback_center
+
+    if auto_center == "heme_fe":
+        # Parse fixed-width PDB columns:
+        # atom name cols 12-16; resname 17-20; x 30-38; y 38-46; z 46-54; element 76-78
+        fe_xyz: list[Tuple[float, float, float]] = []
+        heme_like = {"HEM", "HEC", "HEA", "HEO", "HEM3", "HMS", "HDD", "HBI"}  # permissive set
+
+        try:
+            with pdb_path.open("r", errors="ignore") as fh:
+                for line in fh:
+                    rec = line[0:6].strip()
+                    if rec not in ("ATOM", "HETATM"):
                         continue
-    except Exception as e:
-        print(f"[warn] auto-center: error scanning PDB {pdb_path}: {e}")
-        return None
+                    resname = line[17:20].strip().upper()
+                    atom_name = line[12:16].strip().upper()
+                    element = line[76:78].strip().upper()
 
-    if not centers:
-        print("[info] auto-center: no HEM/HEC Fe atom found; will use fallback if provided.")
-        return None
+                    # Must be Fe; prefer heme-like residues but don’t strictly require
+                    if element != "FE" and atom_name != "FE":
+                        continue
+                    if resname and (resname not in heme_like):
+                        # Allow generic Fe hits if no heme tag present
+                        # (still useful for meta-hemes or variant 3-letter codes)
+                        pass
 
-    n = len(centers)
-    cx = sum(x for x, _, _ in centers) / n
-    cy = sum(y for _, y, _ in centers) / n
-    cz = sum(z for _, _, z in centers) / n
-    print(f"[info] auto-center: using mean Fe position from {n} heme(s): ({cx:.3f}, {cy:.3f}, {cz:.3f})")
-    return (cx, cy, cz)
+                    try:
+                        x = float(line[30:38])
+                        y = float(line[38:46])
+                        z = float(line[46:54])
+                        fe_xyz.append((x, y, z))
+                    except Exception:
+                        continue
+        except FileNotFoundError:
+            return fallback_center
+
+        if fe_xyz:
+            # centroid of all Fe atoms
+            sx = sum(p[0] for p in fe_xyz)
+            sy = sum(p[1] for p in fe_xyz)
+            sz = sum(p[2] for p in fe_xyz)
+            n = float(len(fe_xyz))
+            return (sx / n, sy / n, sz / n)
+
+        return fallback_center
+
+    # Unknown strategy → just return fallback
+    return fallback_center
 
 # ---------- PDB Processing Steps ----------
 
@@ -311,103 +345,108 @@ def _to_pdbqt_ligand(inp_sdf: Path, out_pdbqt: Path) -> None:
 def run(protein_pdb_in: str | Path, ligand_sdf_in: str | Path, cfg: Dict[str, Any]) -> List[str]:
     """
     Execute smina docking, potentially multiple times with different seeds.
-    Includes preprocessing steps for the receptor PDB.
+    Includes preprocessing steps for the receptor PDB (clean → PDBFixer → PDBQT)
+    and ligand SDF → PDBQT conversion. Supports auto-centering the docking box
+    from the receptor PDB (e.g., heme Fe centroid) with an explicit fallback.
 
     Args:
-        protein_pdb_in: Path to the initial (fetched) receptor PDB.
-        ligand_sdf_in: Path to the initial (fetched/prepared) ligand SDF.
-        cfg: Configuration dictionary.
+        protein_pdb_in: Path to the initial receptor PDB (already fetched/prepared upstream).
+        ligand_sdf_in:  Path to the prepared ligand SDF (already protonated/charged upstream).
+        cfg:             Full pipeline configuration dictionary.
 
     Returns:
         List[str]: Paths to all generated SDF files containing poses.
     """
-    _need("smina")
+    # --- Sanity / setup ---
+    if _need("smina") is None:
+        raise RuntimeError("Required binary 'smina' not found on PATH.")
     work = _ensure_workdir()
 
     protein_pdb_in = Path(protein_pdb_in)
-    ligand_sdf_in = Path(ligand_sdf_in)  # Assume ligand_prep handled protonation/charges
+    ligand_sdf_in  = Path(ligand_sdf_in)
 
     if not protein_pdb_in.exists() or protein_pdb_in.stat().st_size == 0:
         raise RuntimeError(f"Input receptor PDB not found or empty: {protein_pdb_in}")
     if not ligand_sdf_in.exists() or ligand_sdf_in.stat().st_size == 0:
         raise RuntimeError(f"Input ligand SDF not found or empty: {ligand_sdf_in}")
 
-    prep_cfg = _cfg_prep_protein(cfg)
-    docking_cfg = _cfg_docking(cfg)
-    runtime_cfg = cfg.get("runtime", {})
-    threads = int(runtime_cfg.get("cpu_threads", max(1, os.cpu_count() // 2)))
+    prep_cfg     = _cfg_prep_protein(cfg)
+    docking_cfg  = _cfg_docking(cfg)
+    runtime_cfg  = cfg.get("runtime", {}) or {}
+    threads      = int(runtime_cfg.get("cpu_threads", max(1, (os.cpu_count() or 2) // 2)))
 
-    # --- Receptor Preparation Pipeline ---
+    # --- Receptor preparation pipeline ---
+    # 1) Clean PDB (retain chains/HETATMs per prep config)
     pdb_cleaned = work / f"{protein_pdb_in.stem}_cleaned.pdb"
     pdb_after_cleaning = _clean_pdb(protein_pdb_in, pdb_cleaned, prep_cfg)
 
+    # 2) PDBFixer pass (optional if pdbfixer available)
     pdb_fixed = work / f"{pdb_after_cleaning.stem}_fixed.pdb"
     pdb_for_obabel = _preprocess_receptor_pdbfixer(pdb_after_cleaning, pdb_fixed, prep_cfg)
 
+    # 3) Convert receptor PDB → PDBQT
     receptor_pdbqt = work / f"{pdb_for_obabel.stem}.pdbqt"
     _to_pdbqt_receptor(pdb_for_obabel, receptor_pdbqt)
-    # --- End Receptor Prep ---
 
-    # --- Ligand Preparation ---
+    # --- Ligand conversion (prepared SDF → PDBQT) ---
     ligand_pdbqt = work / f"{ligand_sdf_in.stem}.pdbqt"
     _to_pdbqt_ligand(ligand_sdf_in, ligand_pdbqt)
-    # --- End Ligand Prep ---
 
-    # --- Docking Parameters ---
-    poses = int(docking_cfg.get("poses", 20))
+    # --- Docking parameter resolution ---
+    poses          = int(docking_cfg.get("poses", 20))
     exhaustiveness = int(docking_cfg.get("exhaustiveness", 8))
-    default_seed = int(docking_cfg.get("seed", 42))
-    num_seeds = int(docking_cfg.get("num_seeds", 1))
-    blind = bool(docking_cfg.get("blind_mode", False))
+    default_seed   = int(docking_cfg.get("seed", 42))
+    num_seeds      = int(docking_cfg.get("num_seeds", 1))
+    blind          = bool(docking_cfg.get("blind_mode", False))
+    box_cfg        = docking_cfg.get("box", {}) or {}
 
-    output_sdf_files: List[str] = []
+    # Normalize size to 3-vector if provided as scalar
+    size = box_cfg.get("size")
+    if isinstance(size, (int, float)):
+        size = [size, size, size]
 
-    # Precompute box center/size if not blind
-    box_center: Optional[Tuple[float, float, float]] = None
-    box_size = None
+    # Resolve center for boxed docking (if not blind)
+    center: Optional[Tuple[float, float, float]] = None
     if not blind:
-        box = docking_cfg.get("box", {}) or {}
-        # size must be present
-        size = box.get("size")
-        if isinstance(size, (int, float)):
-            size = [size, size, size]
-        if not (isinstance(size, (list, tuple)) and len(size) == 3):
-            raise RuntimeError("Docking box 'size' must be a list/tuple of 3 floats.")
-        box_size = [float(size[0]), float(size[1]), float(size[2])]
-
-        center = box.get("center")
-        auto_mode = (box.get("auto_center") or "").lower()
-        fallback_center = box.get("fallback_center")
-
-        if auto_mode == "heme_fe":
-            auto = _autocenter_box_from_pdb(pdb_for_obabel)
-            if auto is not None:
-                box_center = auto
-            elif fallback_center and len(fallback_center) == 3:
-                box_center = (float(fallback_center[0]), float(fallback_center[1]), float(fallback_center[2]))
-                print(f"[info] auto-center: using fallback center: {box_center}")
-            elif center and len(center) == 3:
-                box_center = (float(center[0]), float(center[1]), float(center[2]))
-                print(f"[info] auto-center: using user-provided 'center' as fallback: {box_center}")
-            else:
-                raise RuntimeError(
-                    "auto_center=heme_fe requested but no Fe found and neither "
-                    "'fallback_center' nor 'center' provided."
-                )
+        auto_key = box_cfg.get("auto_center")  # e.g., "heme_fe"
+        fallback = box_cfg.get("fallback_center")
+        if isinstance(fallback, (list, tuple)) and len(fallback) == 3:
+            fallback = (float(fallback[0]), float(fallback[1]), float(fallback[2]))
         else:
-            # No auto centering; require explicit center
-            if not (center and len(center) == 3):
-                raise RuntimeError("Boxed docking requires 'box.center' when auto_center is not used.")
-            box_center = (float(center[0]), float(center[1]), float(center[2]))
+            fallback = None
 
-    # --- Run Smina (potentially multiple times) ---
+        # Try auto-centering first from the cleaned/fixed receptor PDB
+        center = autocenter_box_from_pdb(pdb_for_obabel, auto_center=auto_key, fallback_center=fallback)
+
+        # If auto-center failed, try explicit box.center
+        if center is None:
+            explicit = box_cfg.get("center")
+            if isinstance(explicit, (list, tuple)) and len(explicit) == 3:
+                center = (float(explicit[0]), float(explicit[1]), float(explicit[2]))
+
+        # Validate we have both center and size
+        if center is None or not (isinstance(size, (list, tuple)) and len(size) == 3):
+            raise RuntimeError(
+                "Boxed docking requested but a valid center/size could not be resolved.\n"
+                "Provide one of:\n"
+                "  - docking.box.auto_center (e.g., 'heme_fe') with optional docking.box.fallback_center and docking.box.size, or\n"
+                "  - explicit docking.box.center and docking.box.size."
+            )
+
+        print(f"[info] auto-center: using center: ({center[0]:.3f}, {center[1]:.3f}, {center[2]:.3f})")
+
+    autobox_add = float(box_cfg.get("autobox_add", 8.0))  # used only for blind mode
+
+    # --- Execute one or many smina runs ---
+    output_sdf_files: List[str] = []
     for i in range(num_seeds):
+        # Choose seed: fixed if 1 run; random per run if multiple
         current_seed = default_seed if num_seeds == 1 else random.randint(1, 10_000_000)
         print(f"\n[info] Starting smina run {i+1}/{num_seeds} with seed {current_seed}...")
 
         run_alias = _alias_suffix(seed_val=current_seed if num_seeds > 1 else None)
-        out_sdf = work / f"{receptor_pdbqt.stem}_{ligand_pdbqt.stem}{run_alias}_poses.sdf"
-        log_txt = work / f"{receptor_pdbqt.stem}_{ligand_pdbqt.stem}{run_alias}_smina.log"
+        out_sdf   = work / f"{receptor_pdbqt.stem}_{ligand_pdbqt.stem}{run_alias}_poses.sdf"
+        log_txt   = work / f"{receptor_pdbqt.stem}_{ligand_pdbqt.stem}{run_alias}_smina.log"
 
         cmd_base: List[str] = [
             "smina",
@@ -421,30 +460,29 @@ def run(protein_pdb_in: str | Path, ligand_sdf_in: str | Path, cfg: Dict[str, An
         ]
 
         if blind:
-            cmd_base += ["--autobox_ligand", str(ligand_pdbqt), "--autobox_add", "8"]
+            # autobox around ligand with padding
+            cmd_base += ["--autobox_ligand", str(ligand_pdbqt), "--autobox_add", f"{autobox_add:.3f}"]
         else:
-            cx, cy, cz = box_center  # type: ignore
-            sx, sy, sz = box_size    # type: ignore
+            # use resolved center/size
             cmd_base += [
-                "--center_x", f"{cx:.3f}",
-                "--center_y", f"{cy:.3f}",
-                "--center_z", f"{cz:.3f}",
-                "--size_x", f"{sx:.3f}",
-                "--size_y", f"{sy:.3f}",
-                "--size_z", f"{sz:.3f}",
+                "--center_x", f"{center[0]:.3f}",
+                "--center_y", f"{center[1]:.3f}",
+                "--center_z", f"{center[2]:.3f}",
+                "--size_x",   f"{float(size[0]):.3f}",
+                "--size_y",   f"{float(size[1]):.3f}",
+                "--size_z",   f"{float(size[2]):.3f}",
             ]
 
         try:
             _run_subprocess(cmd_base, log_path=log_txt)
             if not out_sdf.exists() or out_sdf.stat().st_size == 0:
-                print(f"[warn] smina run {i+1} (seed {current_seed}) finished but produced no poses: {out_sdf}. Check log: {log_txt}")
+                print(f"[warn] smina run {i+1} (seed {current_seed}) produced no poses: {out_sdf}. See {log_txt}")
             else:
                 output_sdf_files.append(out_sdf.as_posix())
                 print(f"[info] smina run {i+1} complete. Output: {out_sdf}")
-
         except Exception as e:
-            print(f"[error] smina run {i+1} (seed {current_seed}) failed: {e}. Check log: {log_txt}")
-            # Continue other seeds; change to `raise` if you want fail-fast across seeds
+            print(f"[error] smina run {i+1} (seed {current_seed}) failed: {e}. See {log_txt}")
+            # Continue trying remaining seeds
             continue
 
     if not output_sdf_files:

@@ -77,3 +77,6 @@ configs/autopocketgen*/**
 # Drop GAFF path
 scripts/md_gaff_prepare.py
 tests/test_md_gaff_prepare.py
+# GNINA logs / rescored artifacts
+**/*_gnina.log
+**/*_gnina_rescored.sdf
