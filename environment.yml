@@ -12,12 +12,17 @@ dependencies:
   - mdanalysis>=2.4,<3
   - mdtraj>=1.9.9
   - rdkit=2023.*         # works with your current pipeline
+  - pydantic>=2,<3
+  - ambertools>=23
+  - lxml
   - openbabel>=3.1
   - propka
   - pdb2pqr
   - smina
   - pymol-open-source    # <— add this to keep PyMOL in the env
   - pytest
+  - pytest-order
+  - pytest-dependency
   - pip
   - pip:
       - dimorphite-dl
