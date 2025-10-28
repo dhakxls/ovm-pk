@@ -1,27 +1,74 @@
+# Baseline developer defaults (authoritative schema)
+
+fetch:
+  protein:
+    target_species_id: 9606
+    exp_method: X-RAY DIFFRACTION
+    max_resolution: 3.0
+    required_ligands: ["HEM"]     # heme default; can be []
+  ligand:
+    identifier_type: name         # name|cid|smiles|inchikey
+
+prep:
+  protein:
+    ph: 7.4
+    run_pdbfixer: true
+    keep_chains: ["A"]            # used by smina_wrapper cleaner
+    keep_hetatms: ["HEM"]
+    output_suffix: "_fixed_ph7.4"
+  ligand:
+    ph: 7.4
+    charge_method: gasteiger
+    force_3d: true
+    output_suffix: "_prepared_ph7.4"
+  strip_heme: true
+  strip_resnames: [GOL, SO4, EDO, PEG, TRS, ACT, PG4, PO4, CL, NA]
+
 docking:
+  engine: smina                   # smina|gnina (primary driver)
   structure_policy: prefer_apo
   blind_mode: false
+  num_seeds: 2
   poses: 20
   exhaustiveness: 8
   seed: 42
   box:
-    center:
-      - -15.846
-      - -23.032
-      - -11.293
-    size:
-      - 26.0
-      - 26.0
-      - 26.0
+    auto_center: heme_fe          # heme_fe|none (uses Fe centroid if present)
+    fallback_center: [-15.846, -23.032, -11.293]
+    size: [12.0, 12.0, 12.0]
+    autobox_add: 8                # used if blind_mode true
+  gnina:                          # present but disabled by default
+    enabled: false
+    use_gpu: true
+    mode: rescoring               # "rescoring" (re-rank smina poses) | "direct"
+    cnn_scoring: ad4              # gnina scoring type for direct docking
+    cnn_models: null              # path or model name; null=gnina default
+    cnn_top_n: 20                 # re-score top-N poses
+    extra_args: []                # list of passthrough args
+
 validation:
-  rmsd_gate: 2.0
+  rmsd_gate: 3.0
+
 md:
   temperature: 310
   pressure: 1.0
-  length_ns: 50
+  length_ns: 1.0
+  water_model: tip3p
+  padding: 10.0
+  ionic: 0.15
+
 runtime:
   serialize_gpu: true
-  cpu_threads: 12
+  cpu_threads: 8
+  platform: CUDA                 # CUDA|CPU|Reference (OpenMM platform)
+
 reporting:
-  outdir: results/reports
-  run_root: results/runs
+  outdir: results/reports_dev
+  run_root: results/runs_dev
+
+benchmarking:
+  enabled: false
+  temperature_K: 298.15
+  dataset_csv: null              # path to CSV with ligand_id, Ki (units), notes
+  ki_units: nM
+  metrics: [rmse_kcalmol, spearman, kendall]

@@ -1,16 +1,25 @@
-# Light-weight config for CI and smoke tests
+# CI-speed overrides for default.yaml
+
+prep:
+  protein:
+    run_pdbfixer: false            # skip heavy fixer in CI to save time
+
 docking:
-  structure_policy: prefer_apo
-  blind_mode: false
-  poses: 3
-validation:
-  rmsd_gate: 3.0
+  num_seeds: 1
+  poses: 5
+  exhaustiveness: 2
+  gnina:
+    enabled: false                 # keep CNN off in fast mode
+
 md:
-  temperature: 300
-  pressure: 1.0
-  length_ns: 0.05    # don't actually run MD in dry-run
+  length_ns: 0.05                  # ~50 ps
+  padding: 9.0
+  ionic: 0.10
+
 runtime:
-  serialize_gpu: true
   cpu_threads: 2
+  platform: CPU
+
 reporting:
   outdir: results/reports_fast
+  run_root: results/runs_fast

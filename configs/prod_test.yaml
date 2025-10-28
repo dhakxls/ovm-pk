@@ -1,20 +1,20 @@
-# Configuration for a production-like test run
-# Uses multi-seed docking and short GPU MD with automatic docking-box centering.
+# Production-like test run with multi-seed docking and longer MD
 
 fetch:
   protein:
-    # identifier: P08684           # (Optional) lock to a UniProt ID
-    target_species_id: 9606        # Homo sapiens
-    exp_method: "X-RAY DIFFRACTION"
-    max_resolution: 3.0            # Å
-    required_ligands: ["HEM"]      # ensure a heme-bound structure is picked
+    target_species_id: 9606
+    exp_method: X-RAY DIFFRACTION
+    max_resolution: 3.0
+    required_ligands: ["HEM"]
   ligand:
-    identifier_type: name          # name | cid | smiles | inchikey
+    identifier_type: name
 
 prep:
   protein:
     ph: 7.4
     run_pdbfixer: true
+    keep_chains: ["A"]
+    keep_hetatms: ["HEM"]
     output_suffix: "_fixed_ph7.4"
   ligand:
     ph: 7.4
@@ -22,21 +22,29 @@ prep:
     force_3d: true
     output_suffix: "_prepared_ph7.4"
   strip_heme: true
-  strip_resnames: ["GOL","SO4","EDO","PEG","TRS","ACT","PG4","PO4","CL","NA"]
+  strip_resnames: [GOL, SO4, EDO, PEG, TRS, ACT, PG4, PO4, CL, NA]
 
 docking:
+  engine: smina
   structure_policy: prefer_apo
-  blind_mode: false                # keep box mode, but auto-center it
+  blind_mode: false
   num_seeds: 5
   poses: 20
   exhaustiveness: 16
   seed: 42
   box:
-    # NEW: auto-center the box on the Fe atom of HEM/HEC in the prepared receptor PDB.
-    # smina_wrapper will override 'center' at runtime if auto_center == "heme_fe".
     auto_center: heme_fe
-    fallback_center: [-15.846, -23.032, -11.293]   # used only if Fe not found
+    fallback_center: [-15.846, -23.032, -11.293]
     size: [12.0, 12.0, 12.0]
+    autobox_add: 8
+  gnina:
+    enabled: true                 # turn on rescoring in prod test
+    use_gpu: true
+    mode: rescoring               # re-score smina poses
+    cnn_scoring: ad4
+    cnn_models: null
+    cnn_top_n: 20
+    extra_args: []                # e.g., ["--cnn_rotation", "auto"]
 
 validation:
   rmsd_gate: 3.0
@@ -52,7 +60,15 @@ md:
 runtime:
   serialize_gpu: true
   cpu_threads: 16
+  platform: CUDA
 
 reporting:
   outdir: results/reports_prod
   run_root: results/runs_prod
+
+benchmarking:
+  enabled: false                  # keep off here; use a separate ki_benchmark.yaml
+  temperature_K: 298.15
+  dataset_csv: null
+  ki_units: nM
+  metrics: [rmse_kcalmol, spearman, kendall]
