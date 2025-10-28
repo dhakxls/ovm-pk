@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.order(2)
+
 import sys, io
 from pathlib import Path
 from contextlib import redirect_stdout, redirect_stderr
@@ -26,7 +30,7 @@ def _rich_progress():
 def _write_log(name: str, text: str):
     (LOGDIR / f"{name}.log").write_text(text)
 
-@pytest.mark.dependency(depends=["tests/test_00_fetchers.py::test_fetchers_end_to_end"])
+@pytest.mark.dependency(depends=["fetchers_ok"])
 def test_prep_protein_and_ligand():
     # newest fetched
     pdb = max((WORK / "protein_fetch").glob("*.pdb"), key=lambda p: p.stat().st_mtime)

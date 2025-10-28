@@ -1,3 +1,15 @@
+from __future__ import annotations
+
+
+import pytest
+@pytest.mark.dependency(name="fetchers_ok")
+def test__fetchers_ok_sentinel():
+    # Passes if module imports/setup are OK
+    assert True
+
+import pytest
+pytestmark = pytest.mark.order(1)
+
 import sys, os, json, time, io
 from pathlib import Path
 from contextlib import redirect_stdout, redirect_stderr

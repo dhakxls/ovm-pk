@@ -1,11 +1,11 @@
-# tests/conftest.py
 from __future__ import annotations
-import os
-from pathlib import Path
-from datetime import datetime
-import pytest
-import sys, time
+# merged conftest: banner + env + progress + ordering + run_paths
+import os, sys, time
 from math import ceil
+from datetime import datetime
+from pathlib import Path
+import pytest
+
 # --- repo & run folders -------------------------------------------------------
 REPO = Path(__file__).resolve().parents[1]
 RUN_ID = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -15,7 +15,7 @@ LOG_ROOT = RUN_ROOT / "logs"
 for p in (OUT_ROOT, RUN_ROOT, LOG_ROOT):
     p.mkdir(parents=True, exist_ok=True)
 
-# --- optional environment banner in pytest header ------------------------------
+# --- header info in pytest banner --------------------------------------------
 def pytest_report_header(config):
     lines = [f"OVM-PK test run: {RUN_ID}", f"Output root: {RUN_ROOT}"]
     try:
@@ -37,9 +37,14 @@ def pytest_report_header(config):
         pass
     return "\n".join(lines)
 
-# --- session bootstrap: chdir + unbuffered stdout for live progress -----------
+# --- session bootstrap (env + timer + progress bar) --------------------------
+_started = 0.0
+_total = 0
+_done = 0
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_sessionstart(session):
+    global _started
     os.chdir(str(REPO))
     os.environ.setdefault("PYTHONUNBUFFERED", "1")
     os.environ.setdefault("OVMPK_RUN_ID", RUN_ID)
@@ -52,23 +57,6 @@ def pytest_sessionstart(session):
         print("=" * 60)
         print(f"OVM-PK tests — run {RUN_ID}")
         print("=" * 60)
-
-# --- handy fixture for tests that want the paths ------------------------------
-@pytest.fixture(scope="session")
-def run_paths():
-    return {
-        "repo": REPO,
-        "run_id": RUN_ID,
-        "out_root": RUN_ROOT,
-        "log_root": LOG_ROOT,
-    }
-
-_started = None
-_total = None
-_done = 0
-
-def pytest_sessionstart(session):
-    global _started
     _started = time.time()
 
 def pytest_collection_finish(session):
@@ -91,11 +79,46 @@ def _print_progress():
 
 def pytest_runtest_logreport(report):
     global _done
-    if report.when == "call" and report.passed or report.failed or report.skipped:
+    if report.when == "call" and (report.passed or report.failed or report.skipped):
         _done += 1
         _print_progress()
 
 def pytest_sessionfinish(session, exitstatus):
-    # move to a new line after final progress line
     sys.stderr.write("\n")
     sys.stderr.flush()
+
+# --- deterministic collection order (prefix buckets) --------------------------
+def _pytest_collection_modifyitems(session, config, items):
+    order = [
+        "tests/test_fetchers.py::",
+        "tests/test_prep.py::",
+        "tests/test_docking.py::",
+        "tests/test_pose_selection.py::",
+        "tests/test_md_prepare.py::",
+        "tests/test_md_prod.py::",
+        "tests/test_md_equil.py::",
+        "tests/test_md_analysis.py::",
+        "tests/test_gnina_presence.py::",
+        "tests/test_gnina_rescore.py::",
+        "tests/test_gnina_vs_smina_rank.py::",
+        "tests/test_ki_to_dg.py::",
+        "tests/test_box_autocenter.py::",
+        "tests/test_md_resume.py::",
+    ]
+    def key(item):
+        nid = item.nodeid
+        for i, prefix in enumerate(order):
+            if nid.startswith(prefix):
+                return (i, nid)
+        return (len(order), nid)
+    items.sort(key=key)
+
+# --- handy fixture for paths --------------------------------------------------
+@pytest.fixture(scope="session")
+def run_paths():
+    return {
+        "repo": REPO,
+        "run_id": RUN_ID,
+        "out_root": RUN_ROOT,
+        "log_root": LOG_ROOT,
+    }

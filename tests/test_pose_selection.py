@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.order(4)
+
 import sys, io, json, math
 from pathlib import Path
 from contextlib import redirect_stdout, redirect_stderr

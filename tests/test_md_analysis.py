@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.order(8)
+
 # tests/test_md_analysis.py
 import csv, math
 from pathlib import Path
@@ -85,4 +89,3 @@ def test_dcd_has_multiple_frames():
             lines = [ln for ln in fh if ln.strip()]
         # header + ≥2 data rows ⇒ at least two reporting intervals
         assert len(lines) >= 3, f"Not enough samples in prod.log to infer multiple frames (lines={len(lines)})"
-

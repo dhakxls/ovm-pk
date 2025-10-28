@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.order(7)
+
 # tests/test_md_equil.py
 import os
 from pathlib import Path

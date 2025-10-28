@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.order(13)
+
 # tests/test_box_autocenter.py
 from pathlib import Path
 import math

@@ -1,5 +1,8 @@
-# tests/test_docking.py
 from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.order(3)
+
+# tests/test_docking.py
 import os, sys, logging, shutil, yaml
 from pathlib import Path
 import pytest
@@ -150,4 +153,3 @@ def test_docking_end_to_end(run_paths):
     copied = list(out_root.glob("*.sdf"))
     assert copied, f"No copied docking SDFs in {out_root}"
     logger.info("Docking test finished. Collected %d file(s) in %s", len(copied), out_root)
-

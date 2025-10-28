@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.order(5)
+
 # tests/test_md_prepare.py
 
 import logging

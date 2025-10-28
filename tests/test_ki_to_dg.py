@@ -1,3 +1,7 @@
+from __future__ import annotations
+import pytest
+pytestmark = pytest.mark.order(12)
+
 # tests/test_ki_to_dg.py
 import math
 

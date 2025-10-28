@@ -30,3 +30,11 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.pytest.ini_options]
+addopts = "-vv --durations=10"
+markers = [
+  "order: test ordering (pytest-order)",
+  "dependency: inter-test dependencies (pytest-dependency)"
+]
+order-scope = "session"
