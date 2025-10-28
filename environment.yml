@@ -1,21 +1,22 @@
 name: ovmpk
 channels: [conda-forge, bioconda]
 dependencies:
-  - python=3.10.*          # stay on a known-good Python line
-  - numpy<2                # relax if mdtraj supports 2.x
+  - python=3.10.*
+  - numpy<2              # relax when mdtraj fully supports 2.x
   - pandas
   - scipy
   - matplotlib
   - biopython
-  - openmm=8.*             # MD backend
+  - openmm=8.*           # MD backend
   - pdbfixer>=1.9
   - mdanalysis>=2.4,<3
-  - mdtraj>=1.9.9          # if confirm NumPy 2 support, can drop the numpy<2 cap
-  - rdkit=2023.*           # upgrade only after testing
+  - mdtraj>=1.9.9
+  - rdkit=2023.*         # works with your current pipeline
   - openbabel>=3.1
   - propka
   - pdb2pqr
   - smina
+  - pymol-open-source    # <— add this to keep PyMOL in the env
   - pytest
   - pip
   - pip:
@@ -24,4 +25,3 @@ dependencies:
       - pyyaml
       - requests
       - rcsb-api
-      
