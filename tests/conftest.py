@@ -122,3 +122,10 @@ def run_paths():
         "out_root": RUN_ROOT,
         "log_root": LOG_ROOT,
     }
+
+@pytest.fixture(scope="session")
+def shared_fetchers():
+    """Shared fixture to ensure fetchers run before prep"""
+    from test_fetchers import test_fetchers_end_to_end
+    test_fetchers_end_to_end(True)
+    return True

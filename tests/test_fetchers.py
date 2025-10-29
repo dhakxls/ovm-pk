@@ -2,13 +2,64 @@ from __future__ import annotations
 
 
 import pytest
-@pytest.mark.dependency(name="fetchers_ok")
-def test__fetchers_ok_sentinel():
-    # Passes if module imports/setup are OK
-    assert True
+@pytest.fixture(scope="module")
+def fetchers_init():
+    """Initial test to set up fetcher prerequisites."""
+    return True
+
+def test_fetchers_end_to_end(fetchers_init):
+    """Run the actual fetching test to ensure files exist"""
+    # First make sure we have config
+    cfg = _cfg()
+    pdbid = (cfg.get("protein", {}) or {}).get("pdb", "5VCC")
+    ligand_name = (cfg.get("ligand", {}) or {}).get("name", "ketoconazole")
+
+    # Set up directories
+    prot_dir = OUTDIR / "protein_fetch"
+    lig_dir  = OUTDIR / "ligand_fetch"
+    prot_dir.mkdir(parents=True, exist_ok=True)
+    lig_dir.mkdir(parents=True, exist_ok=True)
+
+    protein_pdb = prot_dir / f"{pdbid}.pdb"
+    ligand_sdf  = lig_dir / f"{ligand_name}.sdf"
+
+    # Run the actual fetch
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with redirect_stdout(stdout), redirect_stderr(stderr), _rich_progress() as prog:
+        t = prog.add_task("[bold]Fetching inputs...", total=2)
+
+        # Try your package first; if missing, use HTTP fallbacks
+        ok = False
+        try:
+            from ovmpk.fetchers.protein_fetcher import fetch_protein  # type: ignore
+            fetch_protein(pdbid=pdbid, out_dir=prot_dir)  # your API may differ
+            ok = True
+        except Exception:
+            _fetch_protein_rcsb(pdbid, protein_pdb)
+        prog.update(t, advance=1)
+
+        try:
+            from ovmpk.fetchers.ligand_fetcher import fetch_ligand  # type: ignore
+            fetch_ligand(name=ligand_name, out_dir=lig_dir)        # your API may differ
+            ok = True or ok
+        except Exception:
+            _fetch_ligand_pubchem_name(ligand_name, ligand_sdf)
+        prog.update(t, advance=1)
+
+    # Logs
+    _write_log("fetch_stdout", stdout.getvalue())
+    _write_log("fetch_stderr", stderr.getvalue())
+    
+    # Assertions
+    assert protein_pdb.exists() and protein_pdb.stat().st_size > 0, "Protein PDB not fetched"
+    assert ligand_sdf.exists() and ligand_sdf.stat().st_size > 0, "Ligand SDF not fetched"
 
 import pytest
-pytestmark = pytest.mark.order(1)
+pytestmark = [
+    pytest.mark.order(1),
+    pytest.mark.dependency()
+]
 
 import sys, os, json, time, io
 from pathlib import Path
@@ -63,46 +114,4 @@ def _fetch_ligand_pubchem_name(name: str, out_sdf: Path):
             return
     raise RuntimeError(f"PubChem fetch failed for {name}")
 
-def test_fetchers_end_to_end():
-    cfg = _cfg()
-    pdbid = (cfg.get("protein", {}) or {}).get("pdb", "5VCC")
-    ligand_name = (cfg.get("ligand", {}) or {}).get("name", "ketoconazole")
 
-    prot_dir = OUTDIR / "protein_fetch"
-    lig_dir  = OUTDIR / "ligand_fetch"
-    prot_dir.mkdir(parents=True, exist_ok=True)
-    lig_dir.mkdir(parents=True, exist_ok=True)
-
-    protein_pdb = prot_dir / f"{pdbid}.pdb"
-    ligand_sdf  = lig_dir / f"{ligand_name}.sdf"
-
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-    with redirect_stdout(stdout), redirect_stderr(stderr), _rich_progress() as prog:
-        t = prog.add_task("[bold]Fetching inputs...", total=2)
-
-        # Try your package first; if missing, use HTTP fallbacks
-        ok = False
-        try:
-            from ovmpk.fetchers.protein_fetcher import fetch_protein  # type: ignore
-            fetch_protein(pdbid=pdbid, out_dir=prot_dir)  # your API may differ
-            ok = True
-        except Exception:
-            _fetch_protein_rcsb(pdbid, protein_pdb)
-        prog.update(t, advance=1)
-
-        try:
-            from ovmpk.fetchers.ligand_fetcher import fetch_ligand  # type: ignore
-            fetch_ligand(name=ligand_name, out_dir=lig_dir)        # your API may differ
-            ok = True or ok
-        except Exception:
-            _fetch_ligand_pubchem_name(ligand_name, ligand_sdf)
-        prog.update(t, advance=1)
-
-    # Logs
-    _write_log("fetch_stdout", stdout.getvalue())
-    _write_log("fetch_stderr", stderr.getvalue())
-
-    # Assertions
-    assert protein_pdb.exists() and protein_pdb.stat().st_size > 0, "Protein PDB not fetched"
-    assert ligand_sdf.exists() and ligand_sdf.stat().st_size > 0, "Ligand SDF not fetched"

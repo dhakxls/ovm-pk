@@ -1,6 +1,9 @@
 from __future__ import annotations
 import pytest
-pytestmark = pytest.mark.order(2)
+pytestmark = [
+    pytest.mark.order(2),
+    pytest.mark.dependency()
+]
 
 import sys, io
 from pathlib import Path
@@ -30,11 +33,20 @@ def _rich_progress():
 def _write_log(name: str, text: str):
     (LOGDIR / f"{name}.log").write_text(text)
 
-@pytest.mark.dependency(depends=["fetchers_ok"])
-def test_prep_protein_and_ligand():
-    # newest fetched
-    pdb = max((WORK / "protein_fetch").glob("*.pdb"), key=lambda p: p.stat().st_mtime)
-    sdf = max((WORK / "ligand_fetch").glob("*.sdf"), key=lambda p: p.stat().st_mtime)
+def test_prep_protein_and_ligand(shared_fetchers):
+    """Test protein and ligand preparation using fetched files."""
+    # Get expected filenames from config
+    import yaml
+    cfg = yaml.safe_load((REPO / "configs" / "prod_test.yaml").read_text())
+    pdbid = (cfg.get("protein", {}) or {}).get("pdb", "5VCC")
+    ligand_name = (cfg.get("ligand", {}) or {}).get("name", "ketoconazole")
+    
+    # Use specific files from fetcher
+    pdb = WORK / "protein_fetch" / f"{pdbid}.pdb"
+    sdf = WORK / "ligand_fetch" / f"{ligand_name}.sdf"
+    
+    assert pdb.exists() and pdb.stat().st_size > 0, f"Required protein file not found or empty: {pdb}"
+    assert sdf.exists() and sdf.stat().st_size > 0, f"Required ligand file not found or empty: {sdf}"
 
     prot_out = OUT / "protein_prep"
     lig_out  = OUT / "ligand_prep"
