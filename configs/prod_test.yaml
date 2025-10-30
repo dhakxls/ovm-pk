@@ -2,12 +2,12 @@
 
 fetch:
   protein:
-    target_species_id: 9606
-    exp_method: X-RAY DIFFRACTION
-    max_resolution: 3.0
-    required_ligands: ["HEM"]
+    pdb: "5VCC"  # Default example (CYP3A4)
+    target_species_id: 9606  # Human
+    required_ligands: ["HEM"]  # For metalloproteins
   ligand:
-    identifier_type: name
+    name: "ketoconazole"  # Default example
+    identifier_type: "name"  # or smiles, inchi, etc.
 
 prep:
   protein:
@@ -26,6 +26,7 @@ prep:
 
 docking:
   engine: smina
+  physics_module: metal
   structure_policy: prefer_apo
   blind_mode: false
   num_seeds: 5

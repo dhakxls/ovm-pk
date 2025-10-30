@@ -55,6 +55,23 @@ def test_fetchers_end_to_end(fetchers_init):
     assert protein_pdb.exists() and protein_pdb.stat().st_size > 0, "Protein PDB not fetched"
     assert ligand_sdf.exists() and ligand_sdf.stat().st_size > 0, "Ligand SDF not fetched"
 
+def test_flexible_fetcher():
+    """Test configurable fetching."""
+    from ovmpk.fetchers import FlexibleFetcher
+    
+    # CYP3A4-ketoconazole example config
+    cfg = {
+        "protein": {"pdb": "5VCC", "source": "rcsb"},
+        "ligand": {"name": "ketoconazole", "identifier_type": "name"}
+    }
+    
+    fetcher = FlexibleFetcher(cfg)
+    prot_path = fetcher.fetch_protein(Path("data/work/protein"))
+    lig_path = fetcher.fetch_ligand(Path("data/work/ligand"))
+    
+    assert prot_path.exists() and "5VCC" in str(prot_path)
+    assert lig_path.exists() and "ketoconazole" in str(lig_path)
+
 import pytest
 pytestmark = [
     pytest.mark.order(1),
@@ -113,5 +130,3 @@ def _fetch_ligand_pubchem_name(name: str, out_sdf: Path):
             out_sdf.write_bytes(r.content)
             return
     raise RuntimeError(f"PubChem fetch failed for {name}")
-
-

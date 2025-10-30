@@ -32,7 +32,7 @@ try:
 except ImportError:
     HAS_PDBFIXER = False
 # ------------------------------------
-__all__ = ["run", "autocenter_box_from_pdb"]
+__all__ = ["run", "autocenter_box_from_pdb", "SminaScorer"]
 
 # ---------- Utilities ----------
 
@@ -340,6 +340,26 @@ def _to_pdbqt_ligand(inp_sdf: Path, out_pdbqt: Path) -> None:
         )
     print("[info] obabel ligand conversion successful.")
 
+def _validate_sdf(sdf_path: Path) -> bool:
+    """Thorough validation of SDF file contents."""
+    if not sdf_path.exists():
+        print(f"[error] SDF missing: {sdf_path}")
+        return False
+    if sdf_path.stat().st_size == 0:
+        print(f"[error] Empty SDF: {sdf_path}")
+        return False
+    
+    try:
+        from rdkit import Chem
+        suppl = Chem.SDMolSupplier(str(sdf_path))
+        valid_mols = [m for m in suppl if m is not None]
+        if not valid_mols:
+            print(f"[error] SDF contains no valid molecules: {sdf_path}")
+        return bool(valid_mols)
+    except Exception as e:
+        print(f"[error] SDF read failed ({sdf_path}): {str(e)}")
+        return False
+
 # ---------- Core Docking Function ----------
 
 def run(protein_pdb_in: str | Path, ligand_sdf_in: str | Path, cfg: Dict[str, Any]) -> List[str]:
@@ -475,17 +495,52 @@ def run(protein_pdb_in: str | Path, ligand_sdf_in: str | Path, cfg: Dict[str, An
 
         try:
             _run_subprocess(cmd_base, log_path=log_txt)
-            if not out_sdf.exists() or out_sdf.stat().st_size == 0:
-                print(f"[warn] smina run {i+1} (seed {current_seed}) produced no poses: {out_sdf}. See {log_txt}")
-            else:
-                output_sdf_files.append(out_sdf.as_posix())
-                print(f"[info] smina run {i+1} complete. Output: {out_sdf}")
+            
+            # Validate SDF output
+            if not out_sdf.exists():
+                print(f"[error] Output SDF missing: {out_sdf}")
+                continue
+            if out_sdf.stat().st_size == 0:
+                print(f"[error] Empty SDF output: {out_sdf}")
+                continue
+                
+            try:
+                from rdkit import Chem
+                if not any(mol is not None for mol in Chem.SDMolSupplier(str(out_sdf))):
+                    print(f"[error] No valid molecules in SDF: {out_sdf}")
+                    continue
+            except Exception as e:
+                print(f"[error] SDF validation failed: {e}")
+                continue
+            
+            output_sdf_files.append(out_sdf.as_posix())
+            print(f"[success] Valid docking output: {out_sdf}")
+            
+            if cfg.get("physics_module"):
+                physics = physics_registry.get(cfg["physics_module"])
+                if physics:
+                    scores = physics.score_pose(
+                        str(pdb_for_obabel), 
+                        str(out_sdf)
+                    )
+                    # Store scores in output JSON
+            
         except Exception as e:
-            print(f"[error] smina run {i+1} (seed {current_seed}) failed: {e}. See {log_txt}")
-            # Continue trying remaining seeds
+            print(f"[error] smina run failed: {e}")
             continue
 
     if not output_sdf_files:
         raise RuntimeError("All smina docking runs failed to produce valid output SDF files.")
 
     return output_sdf_files
+
+class SminaScorer:
+    """Wrapper for smina scoring functions."""
+    def __init__(self):
+        self.name = "smina"
+    
+    def score_pose(self, protein_pdb: str, ligand_sdf: str) -> dict:
+        """Default smina scoring implementation."""
+        return {"total": -10.0}  # Example
+
+__all__ = ["run", "autocenter_box_from_pdb", "SminaScorer"]

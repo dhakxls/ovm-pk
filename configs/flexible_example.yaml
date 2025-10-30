@@ -1,0 +1,16 @@
+# Flexible pipeline example config
+protein:
+  pdb: "5VCC"  # Can be any PDB ID or N/A
+  source: "rcsb"  # Options: rcsb, alphafold, custom
+  
+ligand: 
+  name: "ketoconazole"  # Can use smiles, inchi, etc.
+  identifier_type: "name"
+
+docking:
+  physics_module: "metal"  # or smina, gnina, etc.
+  
+benchmark:
+  experimental:
+    ki_nm: 26.7
+    dg_kcal: -10.3

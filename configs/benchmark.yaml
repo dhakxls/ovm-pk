@@ -1,0 +1,17 @@
+systems:
+  - pdb: 5VCC
+    ligand: ketoconazole
+    experimental:
+      ki_nm: 26.7
+      dg_kcal: -10.3
+    docking:
+      box:
+        auto_center: heme_fe
+        fallback_center: [-22.578, -26.236, -11.422]
+        size: [12, 12, 12]
+      
+  - pdb: 1A2C  
+    ligand: indomethacin
+    experimental:
+      ki_nm: 8.0
+      dg_kcal: -11.5
