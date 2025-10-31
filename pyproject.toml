@@ -38,3 +38,9 @@ markers = [
   "dependency: inter-test dependencies (pytest-dependency)"
 ]
 order-scope = "session"
+
+[pytest]
+markers = [
+    "integration: mark as integration test",
+    "slow: mark as slow running test"
+]

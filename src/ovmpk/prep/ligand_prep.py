@@ -223,3 +223,28 @@ def prepare(sdf_path: Path, cfg: Dict[str, Any]) -> Path:
 
     print(f"[info] Ligand preparation complete. Output: {outp_sdf}")
     return outp_sdf
+
+
+"""Ligand prep with microstate support."""
+from pathlib import Path
+from typing import Dict
+from .microstates import generate_microstates, dominant_microstate
+
+def prepare_ligand(sdf_file: Path, config: Dict) -> Dict:
+    """Process ligand with pH awareness."""
+    mol = Chem.MolFromMolFile(str(sdf_file))
+    
+    # Generate microstates
+    microstates = generate_microstates(
+        mol, 
+        config['conditions']['pH']
+    )
+    
+    # Select dominant state for docking
+    dominant = dominant_microstate(microstates)
+    
+    return {
+        'microstates': microstates,
+        'dominant': dominant,
+        'original_file': sdf_file
+    }

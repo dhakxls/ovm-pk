@@ -13,7 +13,6 @@ dependencies:
   - mdtraj>=1.9.9
   - rdkit=2023.*         # works with your current pipeline
   - pydantic>=2,<3
-  - ambertools>=23
   - lxml
   - openbabel>=3.1
   - propka
@@ -24,6 +23,8 @@ dependencies:
   - pytest-order
   - pytest-dependency
   - pip
+  - pymbar=4.2.0
+  - rich
   - pip:
       - dimorphite-dl
       - typer

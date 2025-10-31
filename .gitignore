@@ -2,36 +2,67 @@
 __pycache__/
 *.py[cod]
 *.so
-.pytest_cache/
-.mypy_cache/
-.venv/
-.env
-*.pyc
-*.pyo
-
-# --- Editors / OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-.ipynb_checkpoints/
-
-# --- Packaging / builds
+.Python
 build/
 dist/
 *.egg-info/
+*.egg
 
-# --- Repo-specific run artifacts
-# structure / ligand downloads & outputs
-data/input/**          # ignore everything under data/input...
-data/output/
+# --- Project outputs
+results/
+runlogs/
 data/work/
-data/cache/
-structures/**
-results/**
-outputs/**
-logs/**
+data/output/
+reports/
+
+# --- Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Environments
+venv/
+env/
+.venv/
+ENV/
+environment.yml.lock
+
+# --- IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- System
+.DS_Store
+Thumbs.db
+
+# --- Logs
 *.log
+*.sql
+*.sqlite
+
+# --- Temporary files
+*.tmp
+*.bak
+
+# --- Jupyter
+.ipynb_checkpoints/
+
+# --- Documentation
+_site/
+.sass-cache/
+.jekyll-cache/
+
+# --- Custom
+*.pkl
+*.h5
+*.dat
+
+# --- Local config overrides
+configs/local_*.yaml
+configs/private_*.yaml
 
 # keep empty dirs you want in repo
 !data/input/.gitkeep
@@ -65,9 +96,7 @@ logs/**
 **/fort.*
 
 # coverage / test artefacts
-.coverage
 coverage.xml
-htmlcov/
 pytest_rich-*.svg
 pytest_rich-*.txt
 

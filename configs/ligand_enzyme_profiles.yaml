@@ -1,0 +1,171 @@
+# Common ligand-enzyme preparation profiles for Stage 2/3 pipelines.
+#
+# Each profile captures heterogen handling (Stage 2) and pointers to
+# companion force-field assets (Stage 3).  Downstream code can load a
+# profile, merge it with run-specific settings, and feed the values
+# directly into protein_prep.prepare(...).
+#
+# Schema:
+#
+# profiles:
+#   <profile_name>:
+#     description: <human-readable summary>
+#     protein_prep:
+#       heterogens:
+#         allowed_residues: [list of residue codes to retain]
+#         rename_map:
+#           <RES>:
+#             <old_atom_name>: <new_atom_name>
+#         drop_atoms:
+#           <RES>: [atom names to strip entirely]
+#     ligand_parameters: # Optional Stage 3 hints
+#       ffxml: path to ligand-specific ffxml (relative to repo root)
+#       notes: free-form guidance for parameter provenance
+#
+# The defaults section captures reusable building blocks that the
+# profiles can merge with.  Profiles only override the pieces that vary.
+
+defaults:
+  protein_prep:
+    heterogens:
+      allowed_residues:
+        - HEM
+      rename_map:
+        HEM:
+          HAA:  HAA1
+          HAAA: HAA2
+          HAD:  HAD1
+          HADA: HAD2
+          HBA:  HBA1
+          HBAA: HBA2
+          HBB:  HBB1
+          HBBA: HBB2
+          HBC:  HBC1
+          HBCA: HBC2
+          HBD:  HBD1
+          HBDA: HBD2
+          HMA:  HMA1
+          HMAA: HMA2
+          HMAB: HMA3
+          HMB:  HMB1
+          HMBA: HMB2
+          HMBB: HMB3
+          HMC:  HMC1
+          HMCA: HMC2
+          HMCB: HMC3
+          HMD:  HMD1
+          HMDA: HMD2
+          HMDB: HMD3
+      drop_atoms:
+        HEM:
+          - H2A
+          - H2D
+
+profiles:
+  cyp3a4_ketoconazole:
+    description: Cytochrome P450 heme-thiolate complex with azole inhibitor.
+    protein_prep:
+      heterogens:
+        allowed_residues: [HEM, CYP]
+        # Uses default HEM rename/drop rules; cysteine coordinates need no edits.
+    ligand_parameters:
+      ffxml: forcefields/shahrokh_heme_ic6_unl.ffxml
+      notes: Generated from GAFF (antechamber) and merged with Shahrokh IC6 heme libraries via ParmEd.
+
+  fad_dependent_oxidase:
+    description: Flavin adenine dinucleotide (FAD) bound enzymes.
+    protein_prep:
+      heterogens:
+        allowed_residues: [FAD]
+        rename_map:
+          FAD:
+            H42: H42A  # Split fast-exchanging hydrogens for OpenMM templates
+            H43: H43A
+        drop_atoms:
+          FAD: []
+    ligand_parameters:
+      notes: Most Amber force fields supply FAD via frcmod.fad; ensure matching ffxml (e.g., amber14/fad.xml).
+
+  nadp_reductase:
+    description: NADP-dependent enzyme retaining NADP and catalytic metals.
+    protein_prep:
+      heterogens:
+        allowed_residues: [NAD, NADP, ZN, MG]
+        drop_atoms:
+          NAD:
+            - HXT  # Remove alternate-conformation hydrogens absent in Amber templates
+          NADP: []
+        rename_map:
+          NAD:
+            H5:  H5A
+            H5': H5P
+          NADP:
+            H5:  H5A
+            H5': H5P
+    ligand_parameters:
+      notes: Combine amber14/nad.xml (or GAFF-derived NADP library) with appropriate metal ion ffxml.
+
+  biotin_carboxylase:
+    description: Biotin and bicarbonate-bound carboxylase enzymes.
+    protein_prep:
+      heterogens:
+        allowed_residues: [BTN, BCT]
+        drop_atoms:
+          BTN: []
+          BCT: []
+        rename_map:
+          BTN:
+            H1: H1A
+            H2: H2A
+          BCT:
+            HO1: HO1A
+    ligand_parameters:
+      notes: Use GAFF or GLYCAM charges for BTN; bicarbonate parameters available in amber14/ionsff99.xml.
+
+  plp_dependent_transaminase:
+    description: Pyridoxal phosphate (PLP) covalently bound to Lysine (LLP) with substrate analogs.
+    protein_prep:
+      heterogens:
+        allowed_residues: [PLP, LLP]
+        rename_map:
+          PLP:
+            H4: H4A
+        drop_atoms:
+          PLP: []
+          LLP:
+            - HZ1  # Remove duplicate zwitterion hydrogens if template lacks them
+    ligand_parameters:
+      notes: ParmEd conversion of Amber PLP libraries (ff14SB) plus custom Schiff-base adducts as needed.
+
+  sam_dependent_methyltransferase:
+    description: S-adenosyl methionine (SAM) with product S-adenosyl homocysteine (SAH).
+    protein_prep:
+      heterogens:
+        allowed_residues: [SAM, SAH]
+        drop_atoms:
+          SAM: []
+          SAH: []
+        rename_map:
+          SAM:
+            H71: H71A
+            H72: H72A
+          SAH:
+            H71: H71A
+            H72: H72A
+    ligand_parameters:
+      notes: Amber14 contains sam.lib/sah.lib; export through ParmEd into a combined ffxml if both are retained.
+
+  heme_peroxidase_h2o2:
+    description: Heme enzyme retaining compound I peroxide and catalytic calcium.
+    protein_prep:
+      heterogens:
+        allowed_residues: [HEM, PER, CA]
+        drop_atoms:
+          PER:
+            - H1  # Remove extra hydrogen if using deprotonated peroxide template
+        rename_map:
+          PER:
+            O1: O1D
+            O2: O2D
+    ligand_parameters:
+      notes: Merge Shahrokh heme parameters with GAFF/ion libraries that describe bound peroxide and calcium.

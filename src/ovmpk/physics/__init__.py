@@ -1,9 +1,11 @@
-"""Physics module implementations."""
-from .registry import physics_registry
-from .scorers import SminaScorer, MetalPhysics
+"""
+OpenMM physics implementations
+- Metal parameterization
+- Free energy calculations
+- Restraints
+"""
+from .metal import *
+from .abfe import *
+from .restraints import *
 
-# Register default modules
-physics_registry.register("smina", SminaScorer())
-physics_registry.register("metal", MetalPhysics())
-
-__all__ = ['physics_registry']
+__all__ = ['metal', 'abfe', 'restraints']
