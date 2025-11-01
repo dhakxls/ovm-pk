@@ -1,52 +1,31 @@
 """Stage 2 tests: structure preparation built on Stage 1 fetching outputs."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
+from typing import Dict
 
 import pytest
-
-# Ensure Stage 1 fixture is registered for this module
-from tests.test_data_fetching import test_config  # noqa: F401
 
 from src.ovmpk.prep import ligand_prep, protein_prep
 
 
-@pytest.fixture(scope="module")
-def stage1_assets(test_config: dict) -> dict:
-    """Reuse Stage 1 outputs (protein/ligand downloads) for downstream prep tests."""
-    override_dir = os.environ.get("OVMPK_STAGE1_RUN_DIR")
-    run_dir: Path = Path(override_dir) if override_dir else test_config["run_dir"]
-    protein_file = Path(run_dir / f"{test_config['pdb_id']}.pdb")
-    ligand_file = Path(run_dir / f"{test_config['ligand_name']}.sdf")
-
-    if not protein_file.exists():
-        protein_file = Path(test_config["fetcher"].fetch_protein(test_config["pdb_id"]))
-    if not ligand_file.exists():
-        ligand_file = Path(test_config["fetcher"].fetch_ligand(test_config["ligand_name"]))
-
-    return {
-        **test_config,
-        "protein_path": protein_file,
-        "ligand_path": ligand_file,
-    }
-
-
 @pytest.mark.skipif(not protein_prep.HAS_PDBFIXER, reason="PDBFixer is required for protein preparation")
-def test_prepare_protein_creates_fixed_structure(stage1_assets: dict) -> None:
+def test_prepare_protein_creates_fixed_structure(stage1_assets: Dict[str, Path]) -> None:
     """Validate protein preparation generates a cleaned PDB suitable for downstream steps."""
     input_path: Path = stage1_assets["protein_path"]
+    output_dir = stage1_assets["run_dir"] / "protein_prep"
     cfg = {
         "prep": {
             "protein": {
                 "ph": 7.4,
                 "output_suffix": "_stage2_prepped",
                 "run_pdbfixer": True,
+                "output_dir": str(output_dir),
             }
         }
     }
 
-    expected_output = protein_prep.WORK_DIR / f"{input_path.stem}_stage2_prepped.pdb"
+    expected_output = output_dir / f"{input_path.stem}_stage2_prepped.pdb"
     expected_output.unlink(missing_ok=True)
 
     prepared_path = protein_prep.prepare({"apo": input_path}, cfg)
@@ -65,9 +44,10 @@ def test_prepare_protein_creates_fixed_structure(stage1_assets: dict) -> None:
 
 
 @pytest.mark.skipif(not ligand_prep.HAS_RDKIT, reason="RDKit is required for ligand preparation")
-def test_prepare_ligand_generates_protonated_sdf(stage1_assets: dict) -> None:
+def test_prepare_ligand_generates_protonated_sdf(stage1_assets: Dict[str, Path]) -> None:
     """Validate ligand preparation adds hydrogens/charges and writes new SDF."""
     input_path: Path = stage1_assets["ligand_path"]
+    output_dir = stage1_assets["run_dir"] / "ligand_prep"
     cfg = {
         "prep": {
             "ligand": {
@@ -75,11 +55,13 @@ def test_prepare_ligand_generates_protonated_sdf(stage1_assets: dict) -> None:
                 "charge_method": "gasteiger",
                 "output_suffix": "_stage2_prepped",
                 "force_3d": True,
+                "use_dimorphite": True,
+                "output_dir": str(output_dir),
             }
         }
     }
 
-    expected_output = ligand_prep.WORK_DIR / f"{input_path.stem}_stage2_prepped.sdf"
+    expected_output = output_dir / f"{input_path.stem}_stage2_prepped.sdf"
     expected_output.unlink(missing_ok=True)
 
     prepared_path = ligand_prep.prepare(input_path, cfg)

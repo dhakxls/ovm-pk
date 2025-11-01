@@ -1,50 +1,56 @@
-"""Fetch protein and run pipeline."""
-import os
+"""Fetch protein and run pipeline using run-scoped directories."""
+
 import sys
-import shutil
-import requests
+from datetime import datetime
 from pathlib import Path
+
+import requests
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from scripts.run_with_logging import CONFIG, Pipeline
+from ovmpk.utils.run_dirs import set_run_context, stage_dir
 
-def fetch_pdb(pdb_id: str):
-    """Download PDB file directly from RCSB."""
-    os.makedirs('data/input/proteins', exist_ok=True)
-    input_path = Path(f"data/input/proteins/{pdb_id}.pdb")
-    
+
+def _ensure_run_context() -> None:
+    run_root = Path("test_run").resolve()
+    run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+    set_run_context(run_root, run_id)
+
+
+def fetch_pdb(pdb_id: str) -> Path:
+    """Download PDB file directly from RCSB into the run-scoped Stage 1 directory."""
+
+    input_dir = Path("cache/input/proteins")
+    input_dir.mkdir(parents=True, exist_ok=True)
+    input_path = input_dir / f"{pdb_id}.pdb"
+
     if not input_path.exists():
         print(f"Downloading {pdb_id}.pdb from RCSB...")
         url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
-        response = requests.get(url)
+        response = requests.get(url, timeout=30)
         response.raise_for_status()
         input_path.write_text(response.text)
         print(f"Saved to {input_path}")
     else:
-        print(f"{pdb_id}.pdb already exists")
-    
-    # Copy to work directory
-    work_path = Path(f"data/work/protein/{pdb_id}.pdb")
-    work_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(input_path, work_path)
-    
-    # Verify copy
-    if not work_path.exists():
-        raise FileNotFoundError(f"Failed to copy to {work_path}")
-    print(f"Verified copy at {work_path}")
+        print(f"{pdb_id}.pdb already cached at {input_path}")
 
-def run():
-    """Run the pipeline."""
-    # Clean previous runs
-    os.system('rm -rf data/work/ data/output/latest/ runlogs/pipeline.log')
-    os.makedirs('data/work/protein', exist_ok=True)
-    
-    # Execute pipeline
+    stage_path = stage_dir("stage1/protein") / f"{pdb_id}.pdb"
+    stage_path.parent.mkdir(parents=True, exist_ok=True)
+    stage_path.write_text(input_path.read_text())
+    print(f"Staged PDB at {stage_path}")
+    return stage_path
+
+
+def run() -> None:
+    """Run the pipeline in the current run directory."""
+
     print("Starting pipeline...")
-    Pipeline(CONFIG, work_dir="data/work").run()
+    Pipeline(CONFIG).run()
+
 
 if __name__ == "__main__":
+    _ensure_run_context()
     fetch_pdb("5VCC")  # From default.yaml
     run()

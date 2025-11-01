@@ -21,8 +21,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any, Union
 import random  # For multi-seed runs
 
-# Define a work directory for docking outputs
-WORK_DIR = Path("data/work/docking")
+from ..utils.run_dirs import stage_dir
 
 # --- Try importing optional tools ---
 try:
@@ -99,8 +98,7 @@ def _has_atoms(pdbqt_path: Path) -> bool:
     return False
 
 def _ensure_workdir() -> Path:
-    WORK_DIR.mkdir(parents=True, exist_ok=True)
-    return WORK_DIR
+    return stage_dir("docking")
 
 def _alias_suffix(seed_val: Optional[int] = None) -> str:
     """Optional filename suffix (e.g., seed value)."""

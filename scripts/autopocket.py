@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 import yaml
 
+from ovmpk.utils.run_dirs import stage_dir
+
 # ---------- Small types ----------
 
 class Candidate:
@@ -154,7 +156,8 @@ def run_one_candidate(gene: str,
                       seeds: int,
                       alias_prefix: str,
                       cap_env: Optional[dict] = None) -> Candidate:
-    work_glob_dir = Path("data/work/docking")
+    work_glob_dir = stage_dir("docking")
+    tmp_cfg_dir = stage_dir("tmp_cfgs")
     best_cand = Candidate(center=center, size=edge,
                           exhaustiveness=exhaustiveness, poses=poses, seeds=seeds)
 
@@ -165,7 +168,7 @@ def run_one_candidate(gene: str,
             base_cfg, center, edge, exhaustiveness, poses, seed_val,
             int(base_cfg.get("runtime", {}).get("cpu_threads", 1))
         )
-        tmp_yaml = Path("data/work") / "tmp_cfgs" / f"{alias}.yaml"
+        tmp_yaml = tmp_cfg_dir / f"{alias}.yaml"
         ensure_dir(tmp_yaml.parent)
         dump_yaml(cfg, tmp_yaml)
 

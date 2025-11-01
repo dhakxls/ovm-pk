@@ -1,9 +1,8 @@
 from pathlib import Path
-import os
 from typing import Dict, Any, Iterable, Mapping
 
-# Define a work directory for protein prep outputs
-WORK_DIR = Path("data/work/protein_prep")
+from ..utils.run_dirs import stage_dir
+
 
 # Try importing PDBFixer and OpenMM
 try:
@@ -42,8 +41,10 @@ def prepare(paths: Dict[str, Path], cfg: Dict[str, Any]) -> Path:
     output_suffix = prep_cfg.get("output_suffix", f"_fixed_ph{target_ph}")
     run_fixer = prep_cfg.get("run_pdbfixer", True) # Option to disable fixer
 
-    WORK_DIR.mkdir(parents=True, exist_ok=True)
-    outp_pdb = WORK_DIR / f"{input_pdb_path.stem}{output_suffix}.pdb"
+    output_dir_cfg = prep_cfg.get("output_dir")
+    output_dir = Path(output_dir_cfg) if output_dir_cfg else stage_dir("protein_prep")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    outp_pdb = output_dir / f"{input_pdb_path.stem}{output_suffix}.pdb"
 
     if HAS_PDBFIXER and run_fixer:
         print(f"[info] Running PDBFixer on {input_pdb_path} (target pH: {target_ph})...")

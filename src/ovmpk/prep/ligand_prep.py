@@ -6,6 +6,8 @@ import subprocess
 import shutil
 from typing import Dict, Any, Optional
 
+from ..utils.run_dirs import stage_dir
+
 # RDKit imports
 try:
     from rdkit import Chem
@@ -14,8 +16,6 @@ try:
 except ImportError:
     HAS_RDKIT = False
 
-# Define a work directory for ligand prep outputs
-WORK_DIR = Path("data/work/ligand_prep")
 
 def _need(bin_name: str) -> Optional[str]:
     """Check if an external binary is available on PATH, return path or None."""
@@ -78,9 +78,12 @@ def prepare(sdf_path: Path, cfg: Dict[str, Any]) -> Path:
     charge_method = prep_cfg.get("charge_method", "gasteiger")
     output_suffix = prep_cfg.get("output_suffix", f"_prepared_ph{target_ph}")
     force_3d = prep_cfg.get("force_3d", True)
+    use_dimorphite = prep_cfg.get("use_dimorphite", True)
 
-    WORK_DIR.mkdir(parents=True, exist_ok=True)
-    outp_sdf = WORK_DIR / f"{sdf_path.stem}{output_suffix}.sdf"
+    output_dir_cfg = prep_cfg.get("output_dir")
+    output_dir = Path(output_dir_cfg) if output_dir_cfg else stage_dir("ligand_prep")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    outp_sdf = output_dir / f"{sdf_path.stem}{output_suffix}.sdf"
 
     print(f"[info] Starting ligand preparation for {sdf_path}...")
 
@@ -108,10 +111,10 @@ def prepare(sdf_path: Path, cfg: Dict[str, Any]) -> Path:
     # --- Step 1: Protonation using dimorphite-dl ---
     dimorphite_bin = _need("dimorphite_dl")
     # Output file for dimorphite SMILES result
-    temp_protonated_smiles_file = WORK_DIR / f"{sdf_path.stem}_temp_protonated.smi"
+    temp_protonated_smiles_file = output_dir / f"{sdf_path.stem}_temp_protonated.smi"
     current_smiles = initial_smiles # Start with the original SMILES
 
-    if dimorphite_bin and initial_smiles:
+    if use_dimorphite and dimorphite_bin and initial_smiles:
         print(f"[info] Running dimorphite-dl for pH {target_ph}...")
         # --- CORRECTED dimorphite_cmd using SMILES input ---
         dimorphite_cmd = [
@@ -150,6 +153,8 @@ def prepare(sdf_path: Path, cfg: Dict[str, Any]) -> Path:
     else:
         if not initial_smiles:
              print("[warn] Could not extract initial SMILES. Skipping protonation.")
+        elif not use_dimorphite:
+             print("[info] Protonation disabled via configuration. Using original SMILES.")
         elif not dimorphite_bin:
              print("[warn] dimorphite-dl not found in PATH. Skipping pH-specific protonation.")
         current_smiles = initial_smiles

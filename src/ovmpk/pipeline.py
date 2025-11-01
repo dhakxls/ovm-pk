@@ -11,6 +11,7 @@ from .reporting.html_report import generate_html_report
 import logging
 
 from .config.env_defaults import resolve_default_inputs
+from .utils.run_dirs import get_run_dir, set_run_context, stage_dir
 
 # Initialize logging
 configure_logging()
@@ -22,7 +23,6 @@ class Pipeline:
     def __init__(self, config: Dict, work_dir: Optional[str] = None, output_dir: Optional[str] = None):
         logger.info("Initializing pipeline")
         self.config = config
-        self.work_dir = Path(work_dir).resolve() if work_dir else Path("data/work").resolve()
         self.start_time = time.time()
 
         try:
@@ -42,15 +42,30 @@ class Pipeline:
 
             # Handle output directory configuration
             reporting = config.get('reporting', {})
-            base_output = Path(output_dir).resolve() if output_dir else self.work_dir.parent / "results"
-            
-            self.report_dir = Path(reporting.get('outdir', str(base_output / "reports"))).resolve()
-            self.run_dir = Path(reporting.get('run_root', str(base_output / "runs"))).resolve() / datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            # Ensure parent directories exist
+
+            if output_dir:
+                default_run_root = Path(output_dir).resolve()
+            else:
+                default_run_root = Path(reporting.get('run_root', 'test_run')).resolve()
+
+            if default_run_root.name not in {"runs", "test_run"} and not reporting.get('run_root'):
+                run_root = default_run_root / "runs"
+            else:
+                run_root = Path(reporting.get('run_root', default_run_root)).resolve()
+
+            run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+            self.run_dir = set_run_context(run_root, run_id)
+
+            report_default = run_root.parent / "reports" if run_root.parent != run_root else Path("results/reports")
+            self.report_dir = Path(reporting.get('outdir', report_default)).resolve()
             self.report_dir.parent.mkdir(parents=True, exist_ok=True)
-            self.run_dir.parent.mkdir(parents=True, exist_ok=True)
-            
+
+            if work_dir:
+                self.work_dir = Path(work_dir).resolve()
+                self.work_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                self.work_dir = stage_dir("work")
+
             logger.info(f"Output will be saved to {self.run_dir}")
             
         except Exception as e:
