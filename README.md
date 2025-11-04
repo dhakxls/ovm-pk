@@ -1,61 +1,297 @@
-# ovm-pk
+# OVM-PK: Physics-Aware Protein-Ligand Simulation Pipeline
 
-A pragmatic protein–ligand pipeline that goes **Fetch → Prep → Dock (smina/GNINA opt-in) → Pose select → MD (OpenMM) → Resume/Analyze** with opinionated defaults, reproducible configs, and an end-to-end pytest harness.
+A comprehensive molecular dynamics pipeline for protein-ligand systems with a focus on metalloproteins and physics-based scoring.
 
----
+## 🚀 Features
 
-## ✨ Highlights
+* **Interactive CLI**: User-friendly command-line interface for easy analysis
+* **Automated Structure Retrieval**: Fetches protein structures and ligand information automatically
+* **Physics-Aware Docking**: Advanced scoring functions incorporating metal coordination, polarization, and solvation effects
+* **End-to-End Pipeline**: From structure preparation to simulation and analysis
+* **Modular Architecture**: Easily extensible with custom scorers and physics models
+* **Reproducible**: Version-controlled configurations and containerized environments
+* **MM/GBSA benchmarking**: Lightweight calculator with snapshot relaxation, ensemble sampling, and documentation for ΔG validation
+* **High Performance**: GPU-accelerated simulations with OpenMM
 
-* **End-to-end tests** (pytest) for every stage with rich progress + live logs
-* **Multi-seed docking** via `smina` (Vina-compatible) with automatic box centering (heme Fe)
-* **Pose selection** (Fe–N sanity gate + best-energy pick)
-* **MD prep/equil/prod** on GPU (OpenMM, TIP3P, PME) with restart checkpoints
-* **Deterministic configs** (`configs/*.yaml`) + env flags for smoke vs. longer runs
-* **Repro hygiene**: run artifacts and structure files are `.gitignore`’d by default
+## 📦 Installation
 
----
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/ovm-pk.git
+   cd ovm-pk
+   ```
 
-## 🧱 Requirements (split by layer)
+2. Set up the conda environment:
+   ```bash
+   mamba env create -f environment.yml
+   mamba activate ovmpk
+   pip install -e .
+   ```
 
-**APT (system)**
+## 🏃‍♂️ Quick Start
 
-* Ubuntu 22.04+ (WSL2 OK), basic build & GUI bits: `build-essential`, `cmake`, `git`, `curl`, `wget`, `mesa-utils`, `xauth`, `x11-apps` (for X), optional `pymol` (viewer)
-* NVIDIA driver (Windows host) + **CUDA toolkit (optional)** on WSL for GPU OpenMM
+### Interactive Mode (Recommended for New Users)
 
-**Mamba/Conda (project env)**
-
-* Python libs & CLI tools pinned via `environment.yml`:
-
-  * `openmm`, `mdtraj`, `mdanalysis`, `rdkit`, `openbabel`, `pdbfixer`, `propka`, `pdb2pqr`, `smina`, `pytest`, etc.
-* Pip extras: `dimorphite-dl`, `typer`, `pyyaml`, `requests`, `rcsb-api`
-
-> TL;DR policy: **OS things with APT** (drivers, GL/X, system libs), **science stack with mamba**.
-
----
-
-## 🧰 One-shot bootstrap (fresh WSL or new machine)
-
-From repo root:
+Run the interactive CLI to analyze protein-ligand interactions:
 
 ```bash
-# 0) Clone and enter
-git clone <your-fork-url>.git ovm-pk && cd ovm-pk
-
-# 1) System deps (APT)
-./scripts/setup_apt.sh       # installs build tools, X basics, optional PyMOL
-
-# 2) WSL GPU (optional helper)
-./scripts/setup_wsl_gpu.sh   # verifies NVIDIA & CUDA visibility inside WSL
-
-# 3) Project env (mamba)
-./scripts/setup_conda.sh     # creates/updates 'ovmpk' env from environment.yml
-
-# 4) Install package (editable) & sanity checks
-mamba activate ovmpk
-pip install -e .
-./scripts/verify_tools.sh    # asserts smina, obabel, openmm import, etc.
+ovmpk run --interactive
 ```
 
+Follow the prompts to:
+1. Enter a protein name or UniProt ID (e.g., "CYP3A4" or "P08684")
+2. Optionally enter a ligand name (e.g., "ketoconazole")
+3. Let the pipeline handle the rest!
+
+### Advanced Usage
+
+For more control, you can also use a configuration file:
+
+1. Prepare a configuration file (see `configs/template_ligand_enzyme.yaml`)
+2. Run the pipeline:
+   ```bash
+   ovmpk run -c configs/your_config.yaml
+   ```
+
+### MM/GBSA Binding Energy Workflow
+
+Once weight-scan results are generated, the CLI can compute MM/GBSA binding free energies directly:
+
+```bash
+# Baseline energies without additional relaxation
+python -m ovmpk.cli.run_analysis mmgbsa \
+  ovmpk_results/benchmarks/weight_scan_results.json \
+  --out ovmpk_results/benchmarks/mmgbsa_results.json \
+  --gbsa-model GBn2
+
+# Relax complex/receptor/ligand snapshots, archive intermediates, then evaluate energies
+python -m ovmpk.cli.run_analysis mmgbsa \
+  ovmpk_results/benchmarks/weight_scan_results.json \
+  --out ovmpk_results/benchmarks/mmgbsa_relaxed_results.json \
+  --gbsa-model GBn2 \
+  --minimize \
+  --relax \
+  --relax-output ovmpk_results/benchmarks/relaxed_snapshots \
+  --relax-md-steps 1000 \
+  --relax-random-seed 314159
+
+# Launch an ensemble with MD sampling (reuses relaxed snapshots when provided)
+python -m ovmpk.cli.run_analysis mmgbsa \
+  ovmpk_results/benchmarks/weight_scan_results.json \
+  --out ovmpk_results/benchmarks/mmgbsa_ensemble_results.json \
+  --gbsa-model GBn2 \
+  --minimize \
+  --relax \
+  --md-steps 5000 \
+  --sample-interval 50 \
+  --relax-random-seed 314159
+```
+
+Each JSON output captures complex/receptor/ligand energies (kcal/mol), ΔG_bind, and—when relaxation is enabled—per-state energy diagnostics plus paths to archived PDBs for reproducibility. See [`docs/pipeline_stages.md`](docs/pipeline_stages.md) for a deeper discussion of validation strategy, replica ensembles, and next-tier free-energy corrections.
+
+## 🏗️ Project Structure
+
+```
+ovm-pk/
+├── configs/              # Configuration files
+├── data/                 # Input/output data (gitignored)
+│   ├── input/            # Input structures and parameters
+│   └── output/           # Pipeline outputs
+├── docs/                 # Documentation
+├── examples/             # Example scripts
+├── forcefields/          # Force field parameters
+├── scripts/              # Utility scripts
+├── src/                  # Source code
+│   └── ovmpk/            # Main package
+│       ├── analysis/     # Analysis tools
+│       ├── config/       # Configuration management
+│       ├── docking/      # Docking engines and scorers
+│       ├── fetchers/     # Data fetching utilities
+│       ├── md/           # Molecular dynamics
+│       ├── physics/      # Physics models
+│       └── utils/        # Utility functions
+└── tests/                # Test suite
+```
+
+## 📚 Documentation
+
+For detailed documentation, please see the [docs](docs/) directory.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING.md).
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 📧 Contact
+
+For questions or support, please open an issue or contact the maintainers.
+
+## 🛠️ System Requirements
+
+- **OS**: Linux (Ubuntu 22.04+ recommended, WSL2 supported)
+- **CPU**: x86_64 with AVX2 support
+- **GPU**: NVIDIA GPU with CUDA support (recommended) or CPU-only mode
+- **Memory**: 16GB RAM minimum, 32GB+ recommended
+- **Storage**: 50GB+ free space for simulations
+
+### Dependencies
+
+- **System**:
+  ```bash
+  sudo apt-get update
+  sudo apt-get install -y build-essential cmake git curl wget \
+      mesa-utils xauth x11-apps
+  ```
+
+- **NVIDIA (for GPU acceleration)**:
+  - Install NVIDIA drivers and CUDA toolkit
+  - Ensure `nvidia-smi` shows your GPU
+
+### Python Environment
+
+The project uses Mamba/Conda for dependency management. Install dependencies with:
+
+```bash
+mamba env create -f environment.yml
+mamba activate ovmpk
+pip install -e .
+```
+
+## 🔍 Testing
+
+Run the test suite with:
+
+```bash
+pytest tests/ -v
+```
+
+## 📦 Data Management
+
+Input and output data are stored in the `data/` directory, which is gitignored by default. The recommended structure is:
+
+```
+data/
+├── input/
+│   ├── proteins/     # PDB/mmCIF files
+│   └── ligands/      # Ligand files (SDF, MOL2, PDBQT)
+└── output/           # Pipeline outputs
+    ├── 01_prep/      # Preprocessed structures
+    ├── 02_docking/   # Docking results
+    ├── 03_scoring/   # Physics-based scoring
+    ├── 04_simulation/# MD trajectories
+    └── 05_analysis/  # Analysis results
+```
+## 🚀 Quick Start with Example
+
+1. **Prepare your environment**:
+   ```bash
+   # Clone the repository
+   git clone https://github.com/yourusername/ovm-pk.git
+   cd ovm-pk
+   
+   # Set up the environment
+   mamba env create -f environment.yml
+   mamba activate ovmpk
+   pip install -e .
+   ```
+
+2. **Run an example simulation**:
+   ```bash
+   # Create input directories
+   mkdir -p data/input/proteins data/input/ligands
+   
+   # Copy example files (replace with your own)
+   cp examples/data/1abc.pdb data/input/proteins/
+   cp examples/data/ligand.mol2 data/input/ligands/
+   
+   # Run the pipeline
+   python -m ovmpk.pipeline_v2 configs/example_config.yaml -o data/output
+   ```
+
+3. **View results**:
+   - Docking poses: `data/output/02_docking/`
+   - Physics scores: `data/output/03_scoring/physics_scores.json`
+   - Simulation trajectories: `data/output/04_simulation/`
+   - Analysis results: `data/output/05_analysis/`
+
+## 📊 Example Configuration
+
+Here's a minimal configuration file example (`configs/example_config.yaml`):
+
+```yaml
+system:
+  protein_pdb: data/input/proteins/1abc.pdb
+  ligand_pdb: data/input/ligands/ligand.mol2
+  metals:
+    - element: FE
+      position: [10.0, 20.0, 30.0]
+      oxidation_state: 2
+      coordination: 6
+
+scoring:
+  method: physics_based
+  weights:
+    w_vdw: 1.0
+    w_elec: 0.6
+    w_pol: 0.2
+    w_coord: 1.5
+    w_desolv: 0.5
+    w_tors: 0.1
+
+simulation:
+  forcefield: amber14-all.xml
+  water_model: tip3p.xml
+  temperature: 300  # Kelvin
+  pressure: 1.0     # bar
+  nsteps: 1000000   # 2 ns with 2 fs timestep
+```
+
+## 🧪 Testing the Installation
+
+To verify your installation, run the test suite:
+
+```bash
+# Run all tests
+pytest tests/
+
+# Run specific test module
+pytest tests/test_physics_scoring.py -v
+
+# Run with coverage report
+pytest --cov=src/ovmpk tests/
+```
+
+## 🤝 Contributing
+
+We welcome contributions! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📜 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 📚 Documentation
+
+For detailed documentation, please see the [docs](docs/) directory.
+
+## 📧 Contact
+
+For questions or support, please open an issue on GitHub or contact the maintainers.
+
+## 🚀 Next Steps
+
+- Explore the [examples](examples/) directory for more usage examples
+- Check out the [configuration guide](docs/configuration.md) for advanced options
+- Read about [custom physics models](docs/custom_physics.md) to extend the functionality
+- Join our [community discussions](https://github.com/yourusername/ovm-pk/discussions) to ask questions and share ideas
 If you ever need to **rebuild**:
 
 ```bash
@@ -68,37 +304,29 @@ pip install -e .
 
 ---
 
-## 🚀 Quickstart (compact e2e run)
-
-Use the production-like test config with shorter MD steps for speed:
+## Quick Start
 
 ```bash
-mkdir -p runlogs
-OVMPK_EQUIL_STEPS_NVT=1000 OVMPK_EQUIL_STEPS_NPT=1500 OVMPK_PROD_STEPS=5000 \
-pytest --rich --rich-capture=runlogs/pytest-rich.txt \
-  -vv --capture=tee-sys -rA --durations=0 --maxfail=1 --color=yes \
-  -o log_cli=true -o log_cli_level=INFO \
-  --log-file=runlogs/pytest-e2e.log --log-file-level=INFO \
-  tests/test_fetchers.py \
-  tests/test_prep.py \
-  tests/test_docking.py \
-  tests/test_pose_selection.py \
-  tests/test_md_prepare.py \
-  tests/test_md_equil.py \
-  tests/test_md_prod.py \
-  tests/test_md_resume.py \
-  tests/test_md_analysis.py
-```
+# Install dependencies
+mamba env create -f environment.yml
+mamba activate ovm-pk
 
-**Reset workspace (safe):**
+# Run the full pipeline
+python scripts/run.py pipeline configs/default.yaml
 
-```bash
-rm -rf data/work/* data/output/* runlogs/*
+# Or run individual stages
+python scripts/run.py md prepare input.pdb -o system.xml
+python scripts/run.py md run system.xml -o trajectory.dcd
+
+# Get help
+python scripts/run.py --help
+python scripts/run.py pipeline --help
+python scripts/run.py md --help
 ```
 
 ---
 
-## 🗺️ Pipeline Overview
+## Pipeline Overview
 
 ### 1) Fetch
 
@@ -125,13 +353,12 @@ rm -rf data/work/* data/output/* runlogs/*
 
 ### 5) MD
 
-* `scripts/md_gpu_prepare.py` staged build → XML system cache.
 * **Equilibration**: short NVT + NPT. **Production**: short run; DCD + `.chk`.
 * **Resume**: continue from checkpoint. **Analysis**: basic integrity checks.
 
 ---
 
-## 🔧 Configs
+## Configs
 
 See `configs/prod_test.yaml`. Key knobs (excerpt):
 
@@ -156,7 +383,7 @@ You can override ligand identity with `OVMPK_LIGAND_SMILES` for deterministic pr
 
 ---
 
-## 🧪 Tests
+## Tests
 
 Covers the full stack:
 
@@ -170,7 +397,7 @@ All tests are under `tests/` and are runnable individually or in suites.
 
 ---
 
-## 🖼️ Visualization (PyMOL)
+## Visualization (PyMOL)
 
 **Quick viewer** for the exact objects used in docking:
 
@@ -197,7 +424,7 @@ orient lig_docked_0001
 
 ---
 
-## 🤖 GNINA (CNN) integration (optional)
+## GNINA (CNN) integration (optional)
 
 * **Binary**: put `gnina` on `PATH` (official release or container).
 * **Enable**: set `docking.engine: gnina` in a config, or keep `smina` and set `docking.rescore_with_gnina: true`.
@@ -212,22 +439,28 @@ Artifacts will appear as `*_gnina*.{sdf,log}` under `data/work/docking/` with me
 
 ---
 
-## 📁 Repo Layout
+## Project Structure
 
+```bash
+ovm-pk/
+├── configs/           # YAML configs for different pipeline stages
+├── data/              # Input/Output data (gitignored)
+├── docs/              # Documentation
+├── examples/          # Example scripts and configurations
+├── scripts/           # Pipeline scripts and tools
+│   ├── tools/         # Specialized tools (e.g., autopocket)
+│   └── utils/         # Utility scripts
+├── src/               # Source code
+│   └── ovmpk/         # Main package
+│       ├── analysis/  # Analysis tools
+│       ├── config/    # Configuration handling
+│       ├── docking/   # Docking implementations
+│       ├── fetch/     # Data fetching
+│       ├── md/        # Molecular dynamics
+│       ├── physics/   # Physics models and scoring
+│       └── prep/      # Structure preparation
+└── tests/             # Tests for each pipeline stage
 ```
-src/ovmpk/
-  docking/…                 # engines, wrappers, selectors, scorers
-  prep/…                    # protein & ligand
-  fetchers/…                # PDB & ligand resolvers
-  utils/…                   # logging, SMILES helpers, toolchain
-scripts/
-  setup_apt.sh              # system deps (APT)
-  setup_conda.sh            # mamba env create/update from environment.yml
-  setup_wsl_gpu.sh          # optional CUDA/GPU sanity for WSL
-  verify_tools.sh           # asserts smina/obabel/openmm availability
-  md_gpu_prepare.py         # staged MD build
-configs/
-  default.yaml | fast_test.yaml | prod_test.yaml
 tests/
   …                         # pytest suites across the pipeline
 data/
