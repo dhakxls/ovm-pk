@@ -13,8 +13,11 @@ results/
 runlogs/
 data/work/
 data/output/
-reports/
-test_run/
+data/**/*.tar
+data/**/*.tar.bz2
+data/**/*.tar.gz
+ovmpk_results/
+ovmpk_results/**
 
 # --- Testing
 .pytest_cache/
